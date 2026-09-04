@@ -1323,10 +1323,19 @@ window.MM = window.MM || {};
     // neighbouring tiles into lots and draws each as one designed complex.
     // Civic buildings are still one tile, one model, and fall through below.
     var LT = MM.lots, lo = LT ? { s: s, x: 0, y: 0, cx: 0, cy: 0, fx: fx, fy: fy, scale: sc } : null;
+    // Bridges are elevated over water, so they have to paint between what is
+    // behind them and what is in front. This sweep already orders by diagonal
+    // for traffic; riding along with it gets that ordering for nothing.
+    var BR = MM.bridges, bo = null;
+    if (BR) { try { BR.plan(s); } catch (e) { BR = null; } }
+    if (BR) bo = { ox: ox, oy: oy, fx: fx, fy: fy, scale: sc };
 
     for (k = 0; k < n; k++) {
       var i = this._bBld[k], x = i % G, y = (i / G) | 0, d = x + y;
-      while (vd <= d) { this._drawVehDiag(vd); vd++; }
+      while (vd <= d) {
+        if (bo) { try { BR.drawDiag(ctx, bo, vd); } catch (e) {} }
+        this._drawVehDiag(vd); vd++;
+      }
 
       if (LT) {
         var lr = LT.role(s, x, y);
@@ -1350,7 +1359,10 @@ window.MM = window.MM || {};
       this._structure(s, x, y, i);
       if (o && P.fringe) { try { P.fringe(ctx, o); } catch (e) {} }
     }
-    while (vd < 2 * G) { this._drawVehDiag(vd); vd++; }
+    while (vd < 2 * G) {
+      if (bo) { try { BR.drawDiag(ctx, bo, vd); } catch (e) {} }
+      this._drawVehDiag(vd); vd++;
+    }
   };
 
   /* ---------- hover / selection -------------------------------------- */
