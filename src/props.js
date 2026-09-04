@@ -39,6 +39,8 @@ window.MM = window.MM || {};
     C = {
       person: person, car: car, parasol: para,
       trunk: G.css(PAL.trunk),
+      // the ground shadow a tree throws; see tshadow()
+      tshade: G.CAST ? 'rgba(38,46,74,0.26)' : 'rgba(0,0,0,0)',
       tbase: [G.css(PAL.treeA), G.css(PAL.treeC), G.css(PAL.treeB)],
       thi: [G.css(mul(PAL.treeA, 1.26)), G.css(mul(PAL.treeC, 1.26)), G.css(mul(PAL.treeB, 1.26))],
       leaf: G.css(mul(PAL.treeB, 1.1)),
@@ -147,9 +149,38 @@ window.MM = window.MM || {};
     }
   }
 
+  /* how tall each variant stands, as a multiple of its size - the canopy top
+     in canopy() above: round, tall narrow, bush, conifer */
+  var TTOP = [1.16, 1.56, 0.40, 1.30];
+
+  /* Ground shadows for the batch, as one path.
+
+     A tree shadow is the canopy pushed out along gfx.CAST - a blob at the
+     base and another where the crown lands, which fill as one capsule. One
+     path and one fill for the whole batch, so a clump throws a single pool
+     instead of a stack of blobs darkening each other. */
+  function tshadow (ctx) {
+    var CA = G.CAST;
+    if (!CA) return;
+    var i, s, hx, hy, r;
+    ctx.beginPath();
+    for (i = 0; i < TN; i++) {
+      s = TS[i];
+      r = s * TTOP[TV[i]] * CA.len;
+      hx = r * CA.x; hy = r * CA.y;
+      ctx.moveTo(TX[i] + s * 0.30, TY[i]);
+      ctx.ellipse(TX[i], TY[i], s * 0.30, s * 0.17, 0, 0, TAU);
+      ctx.moveTo(TX[i] + hx + s * 0.40, TY[i] + hy);
+      ctx.ellipse(TX[i] + hx, TY[i] + hy, s * 0.40, s * 0.24, 0, 0, TAU);
+    }
+    ctx.fillStyle = C.tshade;
+    ctx.fill();
+  }
+
   function tflush (ctx) {
     if (!TN) return;
     var i, open = 0, tw, th, pass, b;
+    tshadow(ctx);
     for (i = 0; i < TN; i++) {                       // trunks (bushes have none)
       if (TV[i] === 2) continue;
       if (!open) { ctx.beginPath(); open = 1; }

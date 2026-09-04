@@ -205,6 +205,8 @@ window.MM = window.MM || {};
     this._cctx = null;
     this._lc = document.createElement('canvas');     // window lights, same frame
     this._lctx = null;
+    this._shc = document.createElement('canvas');    // shadow layer, blurred on blit
+    this._shctx = null;
     this._cacheKey = '';
     this._cacheOx = 0; this._cacheOy = 0; this._cacheW = 0; this._cacheH = 0;
     this._skipVeh = false;
@@ -417,6 +419,21 @@ window.MM = window.MM || {};
           o.mask = p === 1 || p === 2 ? this._mask(s, x, y) : 0;
           try { fn(ctx, o); } catch (e) { /* one bad tile must not kill the frame */ }
         }
+      }
+    }
+
+    // Every lot paints its own share of the ground - lawn, forecourt, plaza -
+    // and the whole ground plane has to be down before _shadows runs, or each
+    // lot would paint over the shadow falling across it. lots.js splits those
+    // flat pads out into this phase and skips them when it draws the buildings.
+    if (MM.lots && MM.lots.ground && this._nBld) {
+      var go = { s: s, x: 0, y: 0, cx: 0, cy: 0, fx: fx, fy: fy, scale: sc };
+      for (k = 0; k < this._nBld; k++) {
+        i = this._bBld[k]; x = i % G; y = (i / G) | 0;
+        if (MM.lots.role(s, x, y) !== 1) continue;
+        go.x = x; go.y = y;
+        go.cx = (x - y) * fx + ox; go.cy = (x + y) * fy + oy;
+        try { MM.lots.ground(ctx, go); } catch (e) {}
       }
     }
 
@@ -678,65 +695,152 @@ window.MM = window.MM || {};
     ctx.restore();
   };
 
-  /* ---------- shadows ------------------------------------------------- */
+  /* ---------- shadows -------------------------------------------------
+     A cast shadow is the footprint swept along the sun's ground direction -
+     the convex hull of the footprint and the same footprint pushed out by
+     the building's height. Everything writes into one offscreen layer at
+     full opacity, so overlapping shadows union instead of stacking into
+     black blotches, and the layer is blitted back through a blur: soft
+     edges everywhere for the price of one filtered drawImage.
 
-  Renderer.prototype._shadows = function (s) {
-    var alpha = 0.30;
-    if (!this._nBld) return;
-    var ctx = this.ctx, C = this._C, sc = this.scale;
-    var fx = HW * sc, fy = HH * sc, ox = this.ox, oy = this.oy;
-    // The cached city is lit for noon, so its shadows are cast for noon too:
-    // a long dawn shadow baked under a midday facade reads as a bug.
-    var sun = -0.34, stretch = 0.42;
+     `source-atop` keeps the result on ground that is already painted and
+     off the open sky, which is what makes a shadow near the map edge stop
+     at the shoreline instead of hanging in the air.
 
-    var LT = MM.lots;
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = C.shade;
-    ctx.beginPath();
-    for (var k = 0; k < this._nBld; k++) {
-      var i = this._bBld[k], x = i % G, y = (i / G) | 0;
-      var h, cx, cy, ax, ay;
+     The cached city is lit for noon, so its shadows are cast for noon too:
+     a long dawn shadow baked under a midday facade reads as a bug. The sun
+     sits screen-upper-left (see gfx.setSun), so shadows fall down and to
+     the right, towards the camera, where they can actually be seen.        */
 
-      // A block-scale building casts one shadow the size of its whole lot,
-      // not nine tile-sized ones. lots.js knows the footprint and roughly how
-      // tall the thing on it ends up.
+  var CAST = (MM.gfx && MM.gfx.CAST) ||
+    { x: 0.75, y: 0.66, len: 0.62, tint: 'rgb(38,46,74)', cast: 0.34, foot: 0.34 };
+
+  /* Convex hull of a footprint and its offset copy, as one subpath.
+     Andrew's monotone chain over the 8 corners - shared scratch, no
+     allocation, and it stays correct if the sun direction ever moves. */
+  var _hx = new Float64Array(8), _hy = new Float64Array(8);
+  var _hi = new Int32Array(8), _hs = new Int32Array(20);
+
+  function sweptPath (ctx, n, dx, dy) {
+    var m = n * 2, i, j, v, t, k = 0, lower;
+    for (i = 0; i < n; i++) { _hx[n + i] = _hx[i] + dx; _hy[n + i] = _hy[i] + dy; }
+    for (i = 0; i < m; i++) _hi[i] = i;
+    for (i = 1; i < m; i++) {                    // sort by x, then y
+      v = _hi[i]; j = i - 1;
+      while (j >= 0 && (_hx[_hi[j]] > _hx[v] ||
+        (_hx[_hi[j]] === _hx[v] && _hy[_hi[j]] > _hy[v]))) { _hi[j + 1] = _hi[j]; j--; }
+      _hi[j + 1] = v;
+    }
+    for (i = 0; i < m; i++) {                    // lower chain
+      t = _hi[i];
+      while (k >= 2 && cross3(_hs[k - 2], _hs[k - 1], t) <= 0) k--;
+      _hs[k++] = t;
+    }
+    lower = k + 1;
+    for (i = m - 2; i >= 0; i--) {               // upper chain
+      t = _hi[i];
+      while (k >= lower && cross3(_hs[k - 2], _hs[k - 1], t) <= 0) k--;
+      _hs[k++] = t;
+    }
+    k--;                                          // the chain closes on itself
+    ctx.moveTo(_hx[_hs[0]], _hy[_hs[0]]);
+    for (i = 1; i < k; i++) ctx.lineTo(_hx[_hs[i]], _hy[_hs[i]]);
+    ctx.closePath();
+  }
+
+  function cross3 (a, b, c) {
+    return (_hx[b] - _hx[a]) * (_hy[c] - _hy[a]) - (_hy[b] - _hy[a]) * (_hx[c] - _hx[a]);
+  }
+
+  /* the four screen corners of a tile-space rectangle, into the hull scratch */
+  function footprint (a, b, c, d, fx, fy, ox, oy) {
+    _hx[0] = (a - b) * fx + ox; _hy[0] = (a + b) * fy + oy;
+    _hx[1] = (c - b) * fx + ox; _hy[1] = (c + b) * fy + oy;
+    _hx[2] = (c - d) * fx + ox; _hy[2] = (c + d) * fy + oy;
+    _hx[3] = (a - d) * fx + ox; _hy[3] = (a + d) * fy + oy;
+  }
+
+  /* Walk every caster once, handing each one's footprint and height to fn.
+     Both shadow passes need the same list, and role() is not free. */
+  Renderer.prototype._casters = function (s, fn) {
+    var sc = this.scale, fx = HW * sc, fy = HH * sc, ox = this.ox, oy = this.oy;
+    var LT = MM.lots, n = this._nBld, k, i, x, y, h, lot, role, t, sh, f;
+    for (k = 0; k < n; k++) {
+      i = this._bBld[k]; x = i % G; y = (i / G) | 0;
       if (LT) {
-        var role = LT.role(s, x, y);
-        if (role === -1) continue;              // its anchor draws the shadow
+        role = LT.role(s, x, y);
+        if (role === -1) continue;               // its anchor casts for it
         if (role === 1) {
-          var lot = LT.shape(s, x, y);
-          if (!lot || lot.top < 6) continue;
+          // A block-scale building casts one shadow the size of its whole
+          // lot, not nine tile-sized ones. lots.js knows the footprint and
+          // roughly how tall the thing on it ends up.
+          lot = LT.shape(s, x, y);
+          if (!lot) continue;
           h = lot.top * sc;
-          var m = 0.30;                         // lots leave a setback; so does the shadow
-          var ta = lot.x0 - 0.5 + m, tb = lot.y0 - 0.5 + m;
-          var tc = lot.x1 + 0.5 - m, td = lot.y1 + 0.5 - m;
-          var sx = sun * h * stretch * 0.9 + ox, sy = h * stretch * 0.34 + oy;
-          ctx.moveTo((ta - tb) * fx + sx, (ta + tb) * fy + sy);
-          ctx.lineTo((tc - tb) * fx + sx, (tc + tb) * fy + sy);
-          ctx.lineTo((tc - td) * fx + sx, (tc + td) * fy + sy);
-          ctx.lineTo((ta - td) * fx + sx, (ta + td) * fy + sy);
-          ctx.closePath();
+          if (h < 2) continue;                   // a lawn casts nothing
+          footprint(lot.x0 - 0.5 + 0.24, lot.y0 - 0.5 + 0.24,
+            lot.x1 + 0.5 - 0.24, lot.y1 + 0.5 - 0.24, fx, fy, ox, oy);
+          fn(h);
           continue;
         }
       }
-
-      var t = s.grid[i];
-      var sh = SHAPE[t] || SHAPE_DEF;
+      t = s.grid[i];
+      sh = SHAPE[t] || SHAPE_DEF;
       h = (sh[0] + sh[1] * (s.level[i] || 0)) * UNIT * sc;
-      if (h < 1) continue;
-      var f = sh[2];
-      cx = (x - y) * fx + ox + sun * h * stretch * 0.9;
-      cy = (x + y) * fy + oy + h * stretch * 0.34;
-      ax = fx * f * 1.06; ay = fy * f * 1.06;
-      ctx.moveTo(cx, cy - ay);
-      ctx.lineTo(cx + ax, cy);
-      ctx.lineTo(cx, cy + ay);
-      ctx.lineTo(cx - ax, cy);
-      ctx.closePath();
+      if (h < 2) continue;
+      f = sh[2] * 0.5;
+      footprint(x - f, y - f, x + f, y + f, fx, fy, ox, oy);
+      fn(h);
     }
-    ctx.fill();
-    ctx.restore();
+  };
+
+  /* the cast silhouettes on their own, for tools/shlayer.js */
+  Renderer.prototype._shadowPaths = function (g, s, cast) {
+    var lx = CAST.len * CAST.x, ly = CAST.len * CAST.y;
+    this._casters(s, function (h) { sweptPath(g, 4, cast ? h * lx : 0, cast ? h * ly : 0); });
+  };
+
+  Renderer.prototype._shadows = function (s) {
+    if (!this._nBld) return;
+    var sc = this.scale;
+    if (sc < 0.26) return;                       // finer than the blur can carry
+    var ctx = this.ctx, W = this.w, H = this.h, dpr = Math.min(this.dpr || 1, 2);
+    var cw = Math.max(1, Math.round(W * dpr)), chh = Math.max(1, Math.round(H * dpr));
+    var shc = this._shc;
+    if (shc.width !== cw || shc.height !== chh) { shc.width = cw; shc.height = chh; this._shctx = null; }
+    if (!this._shctx) this._shctx = shc.getContext('2d');
+    var g = this._shctx;
+
+    var lx = CAST.len * CAST.x, ly = CAST.len * CAST.y;
+
+    function bake (ctx2, alpha, blur) {
+      ctx2.save();
+      ctx2.globalCompositeOperation = 'source-atop';
+      ctx2.globalAlpha = alpha;
+      ctx2.filter = 'blur(' + blur.toFixed(2) + 'px)';
+      ctx2.drawImage(shc, 0, 0, W, H);
+      ctx2.restore();
+    }
+
+    // pass 1 - the long throw, softest
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = CAST.tint;
+    g.beginPath();
+    this._casters(s, function (h) { sweptPath(g, 4, h * lx, h * ly); });
+    g.fill();
+    bake(ctx, CAST.cast, Math.max(0.9, 1.8 * sc));
+
+    // pass 2 - the contact shadow, a tight dark seam where the walls meet
+    // the ground. Without it every building reads as a decal on the lawn.
+    g.clearRect(0, 0, W, H);
+    g.beginPath();
+    this._casters(s, function (h) {
+      var r = h * 0.10; if (r > 5 * sc) r = 5 * sc;
+      sweptPath(g, 4, r * CAST.x, r * CAST.y);
+    });
+    g.fill();
+    bake(ctx, CAST.foot, Math.max(0.6, 1.0 * sc));
   };
 
   /* ---------- extruded blocks ---------------------------------------- */

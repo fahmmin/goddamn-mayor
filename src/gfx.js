@@ -122,6 +122,24 @@ window.MM = window.MM || {};
     if (gain !== undefined) _sgain = gain;
     if (roof !== undefined) _sroof = roof;
   }
+  /* Where a shadow lands on the ground, and how dark.
+
+     The sun sits screen-upper-left, so a shadow falls down and to the right -
+     towards the camera, which is the only place an isometric shadow can be
+     seen at all. `len` is the ground reach per pixel of drawn height; `x, y`
+     is the unit direction it reaches in. render.js casts the building
+     silhouettes and props.js the trees, and both read this, so a tree and the
+     block behind it agree about where the sun is.
+
+     Baked at noon like the rest of the static cache: a long dawn shadow under
+     a midday facade reads as a bug. */
+  var CAST = {
+    x: 0.75, y: 0.66, len: 0.62,
+    tint: 'rgb(38,46,74)',                 // cool, like a shadow lit only by sky
+    cast: 0.34,                            // the long throw
+    foot: 0.34                             // the contact seam at the wall
+  };
+
   /* nu, nv must be a unit face normal in tile space */
   function spec (nu, nv) {
     var d = nu * _su + nv * _sv;
@@ -628,7 +646,7 @@ window.MM = window.MM || {};
     text3D: text3D, textWall: textWall, textFlat: textFlat,
     glyphRects: glyphRects, textWidth: textWidth,
     hash: hash, clamp: clamp, lerp: lerp, mul: mul, mix: mix,
-    setLight: setLight, setSun: setSun, spec: spec,
+    setLight: setLight, setSun: setSun, spec: spec, CAST: CAST,
     css: css, cssA: cssA, raw: raw, faces: faces, night: night,
     PAL: PAL, CARS: CARS, LM: LM, RM: RM
   };

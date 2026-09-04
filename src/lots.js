@@ -252,7 +252,8 @@ window.MM = window.MM || {};
    * ================================================================== */
 
   var Q = {
-    ctx: null, cx: 0, cy: 0, fx: 32, fy: 16, sc: 1, U: 22, dt: 0,
+    ctx: null, gp: 0, gctx: null,
+    cx: 0, cy: 0, fx: 32, fy: 16, sc: 1, U: 22, dt: 0,
     x: 0, y: 0, lv: 0, w: 1, h: 1, road: 0, wat: 0, kind: 0, seed: 0, hc: 1, pal: null,
     win: null, deck: null, ak: 1,
     u0: -1, v0: -1, u1: 1, v1: 1
@@ -270,14 +271,27 @@ window.MM = window.MM || {};
   function ext (n, hb, ht, col, seam) {
     G.extrude(Q.ctx, Q.cx, Q.cy, Q.fx, Q.fy, G.buf, n, hb, ht, col, seam);
   }
-  /* flat rectangle at height h */
+  /* Flat rectangle at height h.
+
+     A pad at ground level is the lot's own share of the ground plane - lawn,
+     forecourt, plaza - and render.js needs the whole ground plane down before
+     it lays the shadows, or every lot would paint over the shadow falling
+     across it. So a ground-level pad is drawn in the ground phase and skipped
+     in the structure phase; a raised one (a roof deck) goes the other way. */
+  function padTarget (h) {
+    return Q.gp ? (h ? null : Q.gctx) : (h ? Q.ctx : null);
+  }
   function pad (u0, v0, u1, v1, col, h) {
+    var ctx = padTarget(h);
+    if (!ctx) return;
     var b = G.buf2, n = G.rectPts(b, u0, v0, u1, v1);
-    G.slab(Q.ctx, Q.cx, Q.cy, Q.fx, Q.fy, b, n, h || 0, typeof col === 'string' ? col : css(col));
+    G.slab(ctx, Q.cx, Q.cy, Q.fx, Q.fy, b, n, h || 0, typeof col === 'string' ? col : css(col));
   }
   function padS (u0, v0, u1, v1, style, h) {
+    var ctx = padTarget(h);
+    if (!ctx) return;
     var b = G.buf2, n = G.rectPts(b, u0, v0, u1, v1);
-    G.slab(Q.ctx, Q.cx, Q.cy, Q.fx, Q.fy, b, n, h || 0, style);
+    G.slab(ctx, Q.cx, Q.cy, Q.fx, Q.fy, b, n, h || 0, style);
   }
   function XY (u, v, hh) {
     return [G.ix(Q.cx, Q.fx, u, v), G.iy(Q.cy, Q.fy, u, v, hh || 0)];
@@ -2404,6 +2418,62 @@ window.MM = window.MM || {};
   }
 
   var ERR = 0;
+  /* A canvas context that draws nothing.
+
+     The ground phase runs exactly the same archetype code as the structure
+     phase, but only the flat ground pads are meant to reach the canvas. Aiming
+     everything else at this stub means no primitive has to be special-cased
+     and none can leak through - including whatever an archetype reaches for
+     next year. Built from the real prototype so it stays complete. */
+  var NUL = (function () {
+    var n = { canvas: { width: 1, height: 1 } };
+    var stub = { addColorStop: function () {}, setTransform: function () {} };
+    function nop () {}
+    // The named surface, so the stub is complete under the headless smoke
+    // harness too, where there is no CanvasRenderingContext2D to read.
+    var M = ('save restore scale rotate translate transform setTransform ' +
+      'resetTransform getTransform clearRect fillRect strokeRect beginPath ' +
+      'closePath moveTo lineTo bezierCurveTo quadraticCurveTo arc arcTo ' +
+      'ellipse rect roundRect fill stroke clip fillText strokeText drawImage ' +
+      'createImageData putImageData setLineDash getLineDash reset').split(' ');
+    var P = ('fillStyle strokeStyle globalAlpha globalCompositeOperation ' +
+      'lineWidth lineCap lineJoin miterLimit lineDashOffset shadowBlur ' +
+      'shadowColor shadowOffsetX shadowOffsetY font textAlign textBaseline ' +
+      'direction imageSmoothingEnabled imageSmoothingQuality filter ' +
+      'letterSpacing wordSpacing fontKerning').split(' ');
+    var i, k, d;
+    for (i = 0; i < M.length; i++) n[M[i]] = nop;
+    for (i = 0; i < P.length; i++) n[P[i]] = 0;
+    // and whatever else the real context grew since, so nothing can leak
+    var proto = typeof CanvasRenderingContext2D !== 'undefined'
+      ? CanvasRenderingContext2D.prototype : null;
+    if (proto) {
+      var keys = Object.getOwnPropertyNames(proto);
+      for (i = 0; i < keys.length; i++) {
+        k = keys[i];
+        if (k === 'constructor' || k === 'canvas' || n[k] !== undefined) continue;
+        d = Object.getOwnPropertyDescriptor(proto, k);
+        n[k] = (d && typeof d.value === 'function') ? nop : 0;
+      }
+    }
+    n.createLinearGradient = n.createRadialGradient =
+      n.createConicGradient = function () { return stub; };
+    n.createPattern = function () { return null; };
+    n.measureText = function () { return { width: 0 }; };
+    n.getImageData = function () {
+      return { width: 1, height: 1, data: [0, 0, 0, 0] };
+    };
+    n.isPointInPath = n.isPointInStroke = function () { return false; };
+    return n;
+  })();
+
+  /* Paint only this lot's ground plane. Called from render.js's ground pass,
+     before the shadows; draw() then skips the same pads. */
+  function drawGround (ctx, o) {
+    Q.gp = 1; Q.gctx = ctx;
+    try { draw(NUL, o); } finally { Q.gp = 0; Q.gctx = null; }
+  }
+
   function draw (ctx, o) {
     var L = lotOf(o.s, o.x, o.y);
     if (!L) return;
@@ -2476,7 +2546,8 @@ window.MM = window.MM || {};
   }
 
   MM.lots = {
-    plan: plan, role: role, draw: draw, lotOf: lotOf, lots: lots, shape: shape,
+    plan: plan, role: role, draw: draw, ground: drawGround,
+    lotOf: lotOf, lots: lots, shape: shape,
     pin: pin, clearPins: clearPins, ARCH: ARCH, UNIT: UNIT
   };
 })(window.MM);
