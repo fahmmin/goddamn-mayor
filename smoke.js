@@ -95,7 +95,7 @@ global.AudioContext = undefined;   // audio must degrade to silence
 
 // --- load modules in index.html order --------------------------------------
 const ORDER = ['state.js', 'gfx.js', 'audio.js', 'policies.js', 'events.js', 'sim.js',
-  'ground.js', 'roofs.js', 'props.js', 'lots.js', 'light.js', 'bridges.js', 'sky.js', 'render.js', 'ui.js', 'demo.js'];
+  'ground.js', 'roofs.js', 'props.js', 'lots.js', 'light.js', 'bridges.js', 'landmarks.js', 'sky.js', 'render.js', 'ui.js', 'demo.js'];
 // demo.js shadows loadState/saveState/sim.step when showcase mode is on. The
 // harness wants the real ones, so opt out before it loads and test its plan
 // through MM.buildDemoCity instead.
@@ -235,7 +235,8 @@ need(MM.sky && typeof MM.sky.draw === 'function', 'MM.sky.draw');
   for (const L of MM.lots.lots) if (L.pinned) pinned++;
   const WANT = [['airport', 1, 1], ['wind', 26, 1], ['marina', 36, 6], ['stadium', 1, 26],
     ['hospital', 6, 26], ['funfair', 1, 31], ['fire', 6, 31], ['police', 6, 33],
-    ['depot', 11, 31], ['port', 30, 37], ['power', 21, 41], ['solar', 16, 41]];
+    ['depot', 11, 31], ['port', 30, 37], ['power', 21, 41], ['solar', 16, 41],
+    ['hero', 21, 21]];
   for (const [arch, x, y] of WANT) {
     const L = byAnchor.get(x + ',' + y);
     need(!!L && L.arch === arch && L.pinned,

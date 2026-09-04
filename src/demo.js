@@ -42,7 +42,8 @@ window.MM = window.MM || {};
     [11, 31, 4, 4, 'depot',    T.PARK],
     [30, 37, 4, 4, 'port',     T.IND],
     [21, 41, 4, 4, 'power',    T.IND],
-    [16, 41, 4, 4, 'solar',    T.IND]
+    [16, 41, 4, 4, 'solar',    T.IND],
+    [21, 21, 3, 3, 'hero',     T.PARK]   // the one thing allowed to break the height rules
   ];
 
   /* whole blocks kept green, so downtown has somewhere to have lunch */
