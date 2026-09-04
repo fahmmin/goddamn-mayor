@@ -1462,7 +1462,9 @@ window.MM = window.MM || {};
       if (cx < -4 * fx - lw * fx || cx > W + 4 * fx + lh * fx) continue;
       if (cy - top < -4 * fy || cy > H + 4 * fy) continue;
       var u0 = -2 * (lw - 1) - 1, v0 = -2 * (lh - 1) - 1;
-      var rows = clamp(Math.round(top / (22 * sc)), 1, 9);
+      // Supertalls are ~220px at scale 1; a 9-row cap spread over that height
+      // made the windows read as storey-high slabs.
+      var rows = clamp(Math.round(top / (22 * sc)), 1, 18);
       var h0 = top * 0.12, h1 = top * 0.94;
       var dh = (h1 - h0) / rows;
       var colsL = clamp(Math.round(lw * 2.6), 2, 9), du = (1 - u0) / colsL;

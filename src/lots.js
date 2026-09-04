@@ -58,6 +58,45 @@ window.MM = window.MM || {};
     return lv >= 3 ? 3 : (lv >= 1 ? 2 : 1);
   }
 
+  /* ---- downtown -------------------------------------------------------
+     A tower belongs where the city is already dense; a lone level-4 block out
+     in the suburbs is a mistake, not a skyline. This is a summed-area table
+     over "tile at level 3+", so a lot can ask how built-up its neighbourhood
+     is in four reads instead of eighty-one.
+
+     Driven by s.level, never s.pow. Level changes bump s.rev (sim.js), which
+     is what both this plan and the renderer's static cache are keyed on. Land
+     value moves every day WITHOUT bumping rev, so heights driven from it would
+     silently desync the cache. */
+  var DTR = 4;                         // neighbourhood radius, in tiles
+  var dtSum = new Int32Array((GRID + 1) * (GRID + 1));
+
+  function downtownField (s) {
+    var g = s.grid, lvs = s.level, x, y, i, row, prev, hot;
+    for (y = 0; y < GRID; y++) {
+      row = (y + 1) * (GRID + 1); prev = y * (GRID + 1);
+      for (x = 0; x < GRID; x++) {
+        i = y * GRID + x;
+        hot = (ZONED[g[i]] && (lvs[i] | 0) >= 3) ? 1 : 0;
+        dtSum[row + x + 1] = hot + dtSum[prev + x + 1] + dtSum[row + x] - dtSum[prev + x];
+      }
+    }
+  }
+
+  /* 0..1 - how much of this lot's neighbourhood is built up */
+  function dtOf (L) {
+    var x0 = L.x0 - DTR, y0 = L.y0 - DTR, x1 = L.x1 + DTR + 1, y1 = L.y1 + DTR + 1;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > GRID) x1 = GRID;
+    if (y1 > GRID) y1 = GRID;
+    var area = (x1 - x0) * (y1 - y0);
+    if (area <= 0) return 0;
+    var w = GRID + 1;
+    var n = dtSum[y1 * w + x1] - dtSum[y0 * w + x1] - dtSum[y1 * w + x0] + dtSum[y0 * w + x0];
+    return n / area;
+  }
+
   /* size preferences, tried in a hash-rotated order so the grain varies */
   var PREF3 = [[3, 3], [3, 2], [2, 3], [2, 2], [3, 1], [1, 3], [2, 1], [1, 2]];
   var PREF2 = [[2, 2], [2, 1], [1, 2]];
@@ -80,6 +119,7 @@ window.MM = window.MM || {};
     planRev = s.rev | 0; planDone = true;
     lots.length = 0;
     for (var q = 0; q < owner.length; q++) owner[q] = -1;
+    downtownField(s);
 
     var g = s.grid, lvs = s.level, x, y, i, k, kind, lv, cap, pref, st, c, w, h, xx, yy, j, id, mx;
     for (y = 0; y < GRID; y++) {
@@ -113,12 +153,29 @@ window.MM = window.MM || {};
         }
         var L = {
           x0: x, y0: y, x1: x + w - 1, y1: y + h - 1, w: w, h: h,
-          kind: kind, lv: mx, road: 0, arch: '', pinned: !!P
+          kind: kind, lv: mx, road: 0, arch: '', pinned: !!P, dt: 0
         };
-        L.arch = P ? P.arch : pickArch(L);
+        L.dt = dtOf(L);
+        L.arch = P ? P.arch : '';          // archetypes need the whole city first
         lots.push(L);
       }
     }
+    /* Downtown is RELATIVE: a city's core is wherever that city is densest,
+       not some absolute density. Normalising here means a small town gets its
+       own modest centre and a built-out metropolis gets a real one, instead of
+       a magic constant tuned against whichever map happened to be open. The
+       floor is what stops a sparse town promoting its least-empty block to a
+       skyline. Archetypes are picked only now, because the score needs every
+       lot counted first. */
+    var dmax = 0;
+    for (k = 0; k < lots.length; k++) if (lots[k].dt > dmax) dmax = lots[k].dt;
+    var dnorm = dmax > 0.18 ? dmax : 0;
+    for (k = 0; k < lots.length; k++) {
+      var Lk = lots[k];
+      Lk.dt = dnorm ? Math.min(1, Lk.dt / dnorm) : 0;
+      if (!Lk.arch) Lk.arch = pickArch(Lk);
+    }
+
     /* which lot edges face a street - drives entrances, trees and parking */
     for (k = 0; k < lots.length; k++) { roadMask(s, lots[k]); waterMask(s, lots[k]); }
   }
@@ -173,6 +230,12 @@ window.MM = window.MM || {};
       return 'row';
     }
     /* commercial */
+    // Supertalls need a big lot AND a dense neighbourhood. Gating on level
+    // alone speckles towers across the map; gating on dt clusters them.
+    if (L.lv >= 3 && L.w * L.h >= 4 && (L.dt || 0) > 0.62) {
+      if (r < 0.42) return 'spire';
+      if (r < 0.74) return 'setback';
+    }
     if (L.lv >= 3) {
       if (big) return r < 0.10 ? 'rotunda' : (r < 0.24 ? 'podium' : (r < 0.42 ? 'curve' :
         (r < 0.58 ? 'atrium' : (r < 0.72 ? 'court' : (r < 0.84 ? 'campus' :
@@ -189,7 +252,7 @@ window.MM = window.MM || {};
    * ================================================================== */
 
   var Q = {
-    ctx: null, cx: 0, cy: 0, fx: 32, fy: 16, sc: 1, U: 22,
+    ctx: null, cx: 0, cy: 0, fx: 32, fy: 16, sc: 1, U: 22, dt: 0,
     x: 0, y: 0, lv: 0, w: 1, h: 1, road: 0, wat: 0, kind: 0, seed: 0, hc: 1, pal: null,
     win: null, deck: null, ak: 1,
     u0: -1, v0: -1, u1: 1, v1: 1
@@ -2208,6 +2271,105 @@ window.MM = window.MM || {};
     edgeKit(true); kerbCars(78);
   };
 
+  /* ---- commercial: the supertalls ------------------------------------
+     Only ever picked downtown (see pickArch). Both are built the same way:
+     a podium with shops at grade so the tower has a street to stand on, then
+     a stack of boxes each inset from the one below. The setbacks are the
+     point - in an isometric view a single tall box just reads as a wide box,
+     and it is the steps that read as height.                              */
+
+  ARCH.spire = function () {
+    var m = 0.26, u0 = Q.u0 + m, v0 = Q.v0 + m, u1 = Q.u1 - m, v1 = Q.v1 - m;
+    pad(Q.u0, Q.v0, Q.u1, Q.v1, PAL.plaza);
+    edgeKit(false);
+    var st = Q.U, col = Q.pal, ctx = Q.ctx;
+    var du = u1 - u0, dv = v1 - v0;
+    var glass = R(201) < 0.55 ? PAL.glassB : PAL.glassG;
+
+    var Hp = st * (1.6 + R(202) * 0.6);
+    var ch = Math.min(du, dv) * 0.14;
+    var n = G.chamfPts(G.buf, u0, v0, u1, v1, ch);
+    ext(n, 0, Hp, col);
+    ctx.fillStyle = css(PAL.glassDark);
+    ctx.beginPath();
+    G.wallQuad(ctx, Q.cx, Q.cy, Q.fx, Q.fy, 0, v1, u0 + ch, u1 - ch, st * 0.14, Hp * 0.66);
+    G.wallQuad(ctx, Q.cx, Q.cy, Q.fx, Q.fy, 1, u1, v0 + ch, v1 - ch, st * 0.14, Hp * 0.66);
+    ctx.fill();
+    shopRow(0, v1, u0 + ch, u1 - ch, Hp * 0.70, Hp * 0.94, 203);
+    shopRow(1, u1, v0 + ch, v1 - ch, Hp * 0.70, Hp * 0.94, 205);
+    parapet(u0, v0, u1, v1, Hp, col);
+
+    var cu = (u0 + u1) * 0.5, cv = (v0 + v1) * 0.5;
+    var hw = du * 0.30, hh = dv * 0.30;
+    var total = (7.0 + Q.lv * 1.1 + R(206) * 3.4) * st * Q.hc * Q.ak * (1 + Q.dt * 0.5);
+    var H = Hp, k, tw, th, seg, a0, b0, a1, b1, cc, rows;
+    for (k = 0; k < 3; k++) {
+      tw = hw * (1 - k * 0.22); th = hh * (1 - k * 0.22);
+      seg = total * (k === 0 ? 0.46 : (k === 1 ? 0.33 : 0.21));
+      a0 = cu - tw; b0 = cv - th; a1 = cu + tw; b1 = cv + th;
+      cc = Math.min(tw, th) * 0.26;
+      n = G.chamfPts(G.buf, a0, b0, a1, b1, cc);
+      ext(n, H, H + seg, k ? mix(col, glass, 0.16 * k) : col, 1);
+      rows = Math.max(2, Math.round(seg / st));
+      bands(0, b1, a0 + cc, a1 - cc, H + st * 0.3, H + seg - st * 0.3, rows, glass);
+      bands(1, a1, b0 + cc, b1 - cc, H + st * 0.3, H + seg - st * 0.3, rows, glass);
+      H += seg;
+      if (k < 2) {                                   // the setback ledge itself
+        box(a0 + cc * 0.5, b0 + cc * 0.5, a1 - cc * 0.5, b1 - cc * 0.5,
+          H, H + Math.max(1, 1.6 * Q.sc), mul(col, 1.06));
+      }
+    }
+    var mw = hw * 0.30, mh = hh * 0.30;
+    box(cu - mw, cv - mh, cu + mw, cv + mh, H, H + st * 0.9, mul(col, 1.04));
+    H += st * 0.9;
+    G.post(ctx, Q.cx, Q.cy, Q.fx, Q.fy, cu, cv, Math.min(mw, mh) * 0.34,
+      H, H + st * (1.4 + R(207) * 1.2), faces(PAL.steel));
+    roofKit(cu - mw, cv - mh, cu + mw, cv + mh, H);
+    edgeKit(true); kerbCars(208);
+  };
+
+  /* Stepped, art-deco: more steps, no mast, squatter than the spire. */
+  ARCH.setback = function () {
+    var m = 0.24, u0 = Q.u0 + m, v0 = Q.v0 + m, u1 = Q.u1 - m, v1 = Q.v1 - m;
+    pad(Q.u0, Q.v0, Q.u1, Q.v1, PAL.plaza);
+    edgeKit(false);
+    var st = Q.U, col = Q.pal, ctx = Q.ctx;
+    var du = u1 - u0, dv = v1 - v0;
+    var glass = R(211) < 0.5 ? PAL.glassG : PAL.glassB;
+
+    var Hp = st * (1.4 + R(212) * 0.5);
+    ext(G.rectPts(G.buf, u0, v0, u1, v1), 0, Hp, col);
+    ctx.fillStyle = css(PAL.glassDark);
+    ctx.beginPath();
+    G.wallQuad(ctx, Q.cx, Q.cy, Q.fx, Q.fy, 0, v1, u0 + 0.08, u1 - 0.08, st * 0.12, Hp * 0.68);
+    G.wallQuad(ctx, Q.cx, Q.cy, Q.fx, Q.fy, 1, u1, v0 + 0.08, v1 - 0.08, st * 0.12, Hp * 0.68);
+    ctx.fill();
+    shopRow(0, v1, u0 + 0.08, u1 - 0.08, Hp * 0.72, Hp * 0.95, 213);
+    parapet(u0, v0, u1, v1, Hp, col);
+
+    var cu = (u0 + u1) * 0.5, cv = (v0 + v1) * 0.5;
+    var total = (5.4 + Q.lv * 0.9 + R(214) * 2.6) * st * Q.hc * Q.ak * (1 + Q.dt * 0.45);
+    var steps = 4, H = Hp, k, f, tw, th, seg, rows;
+    for (k = 0; k < steps; k++) {
+      f = 0.34 - k * 0.062;                          // each tier tighter
+      tw = du * f; th = dv * f;
+      seg = total * (0.40 - k * 0.075);
+      ext(G.rectPts(G.buf, cu - tw, cv - th, cu + tw, cv + th), H, H + seg,
+        mix(col, glass, 0.10 * k));
+      rows = Math.max(1, Math.round(seg / st));
+      bands(0, cv + th, cu - tw + 0.05, cu + tw - 0.05,
+        H + st * 0.25, H + seg - st * 0.25, rows, glass);
+      bands(1, cu + tw, cv - th + 0.05, cv + th - 0.05,
+        H + st * 0.25, H + seg - st * 0.25, rows, glass);
+      H += seg;
+      box(cu - tw * 1.06, cv - th * 1.06, cu + tw * 1.06, cv + th * 1.06,
+        H, H + Math.max(1, 1.5 * Q.sc), mul(col, 1.08));   // cornice
+      H += Math.max(1, 1.5 * Q.sc);
+    }
+    roofKit(cu - du * 0.10, cv - dv * 0.10, cu + du * 0.10, cv + dv * 0.10, H);
+    edgeKit(true); kerbCars(216);
+  };
+
   /* ================================================================== *
    * public
    * ================================================================== */
@@ -2217,7 +2379,10 @@ window.MM = window.MM || {};
     if (CIVIC[L.kind]) return PAL.bone;
     if (L.kind === T.RES) return [PAL.brickA, PAL.brickB, PAL.brickC, PAL.stucco, PAL.sand, PAL.concrete][(r * 6) | 0];
     if (L.kind === T.IND) return [PAL.metalA, PAL.metalB, PAL.sand, PAL.roofGrey][(r * 4) | 0];
-    if (r < 0.30) {
+    // Saturated colour is a downtown thing. Out in the low-rise districts the
+    // pale model-village palette IS the look, so this branch only widens as
+    // the neighbourhood densifies: 10% out of town, 44% in the core.
+    if (r < 0.10 + 0.34 * (L.dt || 0)) {
       return [PAL.teal, PAL.terracot, PAL.plum, PAL.signBlue, PAL.sage, PAL.clay,
         PAL.brickC, PAL.glassG][(hash(L.x0, L.y0, 34) * 8) | 0];
     }
@@ -2246,6 +2411,7 @@ window.MM = window.MM || {};
     Q.sc = o.scale; Q.U = UNIT * o.scale;
     Q.x = L.x0; Q.y = L.y0;                 // hash on the lot origin, not the anchor
     Q.lv = L.lv; Q.w = L.w; Q.h = L.h; Q.road = L.road; Q.wat = L.water | 0; Q.kind = L.kind;
+    Q.dt = L.dt || 0;
     Q.hc = 0.60 + hash(L.x0, L.y0, 36) * 0.68;    // this block's height class
     // a single tile cannot carry a thirty-storey slab without looking like a
     // pencil, so tall archetypes scale with how much land the lot actually has
@@ -2262,6 +2428,13 @@ window.MM = window.MM || {};
     Q.deck = dr < 0.10 ? mix(Q.pal, PAL.roofGrey, 0.55)
       : (dr < 0.17 ? mix(PAL.solar, PAL.roofGrey, 0.3)
         : (dr < 0.24 ? mix(PAL.treeA, PAL.roofGrey, 0.45) : PAL.roofGrey));
+    // landmarks.js owns the hero structures. It draws on the public gfx API
+    // with its own frame, so it needs none of the Q state above - only the
+    // lot box and the scale.
+    if (L.arch === 'hero' && MM.landmarks && MM.landmarks.draw) {
+      try { MM.landmarks.draw(ctx, o, L, Q); } catch (e) {}
+      return;
+    }
     var fn = ARCH[L.arch] || ARCH.strip;
     try {
       fn();
@@ -2278,6 +2451,7 @@ window.MM = window.MM || {};
   var TALL = {
     strip: 2.2, atrium: 3.2, curve: 5.0, podium: 6.0, court: 3.0, mall: 2.4,
     campus: 3.0, rotunda: 4.0, row: 2.6, perim: 4.0, towers: 7.0,
+    spire: 15.0, setback: 11.0, hero: 30.0,
     shed: 2.0, plant: 3.4, yard: 1.2,
     green: 0.4, pond: 0.4, sport: 0.6, plaza: 0.5,
     airport: 2.6, stadium: 3.2, depot: 2.0, power: 4.2, solar: 0.8, wind: 5.0,
@@ -2294,7 +2468,10 @@ window.MM = window.MM || {};
     return {
       x0: L.x0, y0: L.y0, x1: L.x1, y1: L.y1, w: L.w, h: L.h,
       kind: L.kind, arch: L.arch, lv: L.lv,
-      top: (TALL[L.arch] || 2) * UNIT * (0.70 + 0.30 * hc) * ak
+      // Downtown builds taller than the suburbs, but only on a lot with the
+      // land to carry it - a 1x1 supertall reads as a pencil.
+      top: (TALL[L.arch] || 2) * UNIT * (0.70 + 0.30 * hc) * ak *
+        (1 + (area >= 4 ? (L.dt || 0) : 0) * 0.25)
     };
   }
 
