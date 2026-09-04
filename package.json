@@ -1,0 +1,19 @@
+{
+  "name": "mayor-mamdani",
+  "version": "0.1.0",
+  "description": "MAYOR MAMDANI - an NYC city-builder for people waiting on a build",
+  "main": "main.js",
+  "author": "Cyrene",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "test": "node src/sim.test.js",
+    "dist": "node tools/make-icon.js && electron-packager . MayorMamdani --platform=win32 --arch=x64 --out=dist --overwrite --app-version=0.1.0 --icon=build/icon.ico --ignore=\"^/node_modules\" --ignore=\"^/tools\" --ignore=\"^/dist\" --ignore=\"^/build\" --ignore=\"^/smoke.js$\" --ignore=\"^/CONTRACT.md$\" --ignore=\"^/src/sim.test.js$\" --ignore=\"^/.git\"",
+    "smoke": "node smoke.js",
+    "icon": "node tools/make-icon.js"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^44.1.0"
+  }
+}
