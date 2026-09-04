@@ -4,8 +4,8 @@ Electron desktop app. **Classic `<script>` tags, no ES modules, no bundler, ZERO
 Everything hangs off the global `window.MM`. Load order (index.html):
 
     state.js -> gfx.js -> audio.js -> policies.js -> events.js -> sim.js ->
-    ground.js -> roofs.js -> props.js -> lots.js -> light.js -> sky.js ->
-    render.js -> ui.js -> demo.js -> game.js
+    ground.js -> roofs.js -> props.js -> lots.js -> light.js -> bridges.js ->
+    landmarks.js -> sky.js -> render.js -> ui.js -> demo.js -> game.js
 
 Every module file must be wrapped exactly like this:
 
@@ -81,6 +81,32 @@ into an offscreen cache, so this file is split the same way:
 Reflective *shading* is not here: it lives in `gfx.setSun/gfx.spec`, which adds a
 specular lobe inside the existing wall fill in `extrude`/`faces`, so every module
 that draws a wall gets it with no extra draw call and no depth problems.
+
+### src/bridges.js -> `MM.bridges`
+Road crossings over the river. Roads stop dead at water; anywhere a road reaches
+one bank and another picks up on the far bank in the same line, the network
+already implies a crossing.
+
+- `MM.bridges.plan(s)` - finds `road -> water x N -> road` runs. Cached on `s.rev`.
+- `MM.bridges.drawDiag(ctx, o, d)` - draws every deck tile on diagonal `d`.
+  `o` is `{ox, oy, fx, fy, scale}`. Called from render.js's structure sweep, which
+  already orders by `d = x+y`, so an elevated deck paints correctly between what
+  is behind it and what is in front.
+
+Tiered: every crossing gets a deck, piers and railings; only long spans well
+clear of another get towers and cables, or twenty crossings read as a fence.
+Renderer-only - no tile type, no sim change, no save change.
+
+### src/landmarks.js -> `MM.landmarks`
+Hero structures - the one building allowed to break the height rules.
+
+- `MM.landmarks.draw(ctx, o, L, Q)` - called from `lots.js` when a lot's
+  archetype is `'hero'`. Draws on the public `MM.gfx` API with its own frame.
+- Height is read from `MM.lots.shape()`, so the tower, render.js's window lights
+  and light.js's water reflections agree.
+
+Placed with `MM.lots.pin` from the city plan in `demo.js`, like the airport and
+stadium. Never auto-placed.
 
 ### src/render.js -> `MM.Renderer`
 - `new MM.Renderer(canvas)`

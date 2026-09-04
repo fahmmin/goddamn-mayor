@@ -1446,6 +1446,10 @@ window.MM = window.MM || {};
     for (k = 0; k < n; k++) {
       var lot = L[k], sh = LT.shape(s, lot.x1, lot.y1);
       if (!sh || sh.top < 18) continue;      // parks and yards have no windows
+      // A landmark is a lattice, not a building: landmarks.js lights its own
+      // beacon, and a window grid across its lot painted a bright column of
+      // glazing straight through the open steelwork.
+      if (sh.arch === 'hero') continue;
       a[w] = lot.x1; a[w + 1] = lot.y1; a[w + 2] = lot.w; a[w + 3] = lot.h; a[w + 4] = sh.top;
       w += 5;
     }
