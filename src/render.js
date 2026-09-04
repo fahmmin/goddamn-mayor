@@ -1835,6 +1835,7 @@ window.MM = window.MM || {};
       ctx.restore();
     }
     this._lampGlow();
+    if (MM.light && MM.light.haze) MM.light.haze(ctx, this);
 
     this._hoverPass(s);
 

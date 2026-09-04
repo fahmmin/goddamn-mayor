@@ -298,8 +298,31 @@ window.MM = window.MM || {};
     ctx.restore();
   }
 
+  /* ---- 5. aerial perspective ------------------------------------------
+     Air is not clear. Over distance it scatters enough light to lift the far
+     end of a view towards the colour of the sky and flatten its contrast,
+     and an isometric camera puts "far" straight up the screen. Without it a
+     city drawn at one saturation from the near kerb to the back of the map
+     reads as a flat sheet of stickers however well it is lit.
+
+     Live, not baked: it is keyed to the screen, not to the ground, so it has
+     to survive a pan without the cache carrying yesterday's horizon. */
+  function haze (ctx, R) {
+    var a = 0.17 * clamp(0.30 + sun.day * 0.85, 0, 1);
+    if (a < 0.01) return;
+    var tone = skyTone(), h = R.h * 0.62;
+    var g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, rgba(tone, a));
+    g.addColorStop(0.40, rgba(tone, a * 0.42));
+    g.addColorStop(1, rgba(tone, 0));
+    ctx.save();
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, R.w, h);
+    ctx.restore();
+  }
+
   MM.light = {
     sun: sun, update: update, skyTone: skyTone,
-    sky: sky, reflect: reflect, shimmer: shimmer, glow: glow
+    sky: sky, reflect: reflect, shimmer: shimmer, glow: glow, haze: haze
   };
 })(window.MM);

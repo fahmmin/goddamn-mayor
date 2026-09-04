@@ -139,8 +139,8 @@ window.MM = window.MM || {};
      a midday facade reads as a bug. */
   var CAST = {
     x: 0.75, y: 0.66, len: 0.62,
-    tint: 'rgba(38,46,74,0.34)',           // the long throw - cool, sky-lit
-    foot: 'rgba(30,38,64,0.52)'            // the contact seam at the wall
+    tint: 'rgba(38,46,74,0.40)',           // the long throw - cool, sky-lit
+    foot: 'rgba(28,36,62,0.58)'            // the contact seam at the wall
   };
 
   /* nu, nv must be a unit face normal in tile space */

@@ -40,7 +40,7 @@ window.MM = window.MM || {};
       person: person, car: car, parasol: para,
       trunk: G.css(PAL.trunk),
       // the ground shadow a tree throws; see tshadow()
-      tshade: G.CAST ? 'rgba(34,42,70,0.32)' : 'rgba(0,0,0,0)',
+      tshade: G.CAST ? 'rgba(34,42,70,0.37)' : 'rgba(0,0,0,0)',
       tbase: [G.css(PAL.treeA), G.css(PAL.treeC), G.css(PAL.treeB)],
       thi: [G.css(mul(PAL.treeA, 1.26)), G.css(mul(PAL.treeC, 1.26)), G.css(mul(PAL.treeB, 1.26))],
       leaf: G.css(mul(PAL.treeB, 1.1)),

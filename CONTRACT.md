@@ -44,6 +44,20 @@ resume() it, because Chromium blocks audio until a user gesture.
 ### src/sim.js -> `MM.sim.step(s)` (advances exactly 1 tick), `MM.sim.derive(s)`
 `step()` must call `MM.maybeFireEvent(s)` on day rollover and assign the result to `s.pending`.
 
+### src/gfx.js -> `MM.gfx` (drawing primitives, and the light)
+Besides the isometric primitives, gfx owns the art-direction sun. Two shared
+constants, because a tree, a tower and a lamp post all have to agree about it:
+
+- `MM.gfx.CAST` - `{ x, y, len, tint, foot }`. Where a shadow lands on the
+  ground and how dark: `x, y` is the unit screen direction (down and to the
+  right, towards the camera - the only place an isometric shadow can be seen),
+  `len` the ground reach per pixel of drawn height, `tint`/`foot` the rgba of
+  the long throw and of the contact seam. render.js casts the buildings,
+  props.js the trees and street furniture.
+- `MM.gfx.FL` - the colour of the light per face `[top, +v, +u]`. A roof square
+  to the sun goes warm, a wall turned away is lit by sky alone and goes blue.
+  `gfx.faces()` applies it; render.js's own face table matches it by hand.
+
 ### src/lots.js -> `MM.lots`
 Block-scale buildings. The tile grid is the zoning; the architecture is a *lot*.
 
@@ -52,6 +66,13 @@ Block-scale buildings. The tile grid is the zoning; the architecture is a *lot*.
 - `MM.lots.role(s,x,y)` -> `0` not ours | `1` this tile anchors a lot | `-1` covered by its lot.
   The anchor is the lot's max corner, so painter's order by `x+y` still holds.
 - `MM.lots.draw(ctx, {s,x,y,cx,cy,fx,fy,scale})` - draws the whole complex from its anchor.
+- `MM.lots.ground(ctx, o)` - same `o`, but paints **only** the lot's ground
+  plane: its lawn, forecourt, plaza. render.js calls this from the ground pass,
+  because the whole ground plane has to be down before the shadows are laid or
+  every lot paints over the shadow falling across it. `draw()` then skips those
+  same pads. Internally it runs the archetype with everything but the flat
+  ground-level pads aimed at a null context, so no primitive needs a special
+  case and none can leak through.
 - `MM.lots.lots` - the current plan, for tests.
 
 Claims RES/COM/IND/PARK plus SCHOOL, CLINIC, GROCERY, CHILDCARE and TOWER.
@@ -77,6 +98,10 @@ into an offscreen cache, so this file is split the same way:
   glitter on open water. Three fills total; drops out below scale 0.62.
 - `MM.light.glow(ctx, r)` - **live**. The directional wash from the sun's screen
   position, on top of render.js's flat ambient `_tint`.
+- `MM.light.haze(ctx, r)` - **live**. Aerial perspective: air scatters enough
+  light to lift the far end of a view towards the sky's colour, and an
+  isometric camera puts "far" straight up the screen. Keyed to the screen, not
+  the ground, so it must not be baked.
 
 Reflective *shading* is not here: it lives in `gfx.setSun/gfx.spec`, which adds a
 specular lobe inside the existing wall fill in `extrude`/`faces`, so every module
@@ -109,6 +134,13 @@ Placed with `MM.lots.pin` from the city plan in `demo.js`, like the airport and
 stadium. Never auto-placed.
 
 ### src/render.js -> `MM.Renderer`
+Owns the static cache and, inside it, the ground-shadow layer. A cast shadow is
+the swept silhouette - the convex hull of a footprint and the same footprint
+pushed out along `MM.gfx.CAST`. Every caster goes into one offscreen layer, so
+overlapping shadows union instead of stacking into blotches, and it blits back
+through a blur with `source-atop` so the result lands on painted ground and not
+on the open sky. Baked at noon like the rest of the cache.
+
 - `new MM.Renderer(canvas)`
 - `r.resize()`, `r.draw(state, dtMs)`
 - `r.screenToTile(px,py)` -> `{x,y}` or `null`
