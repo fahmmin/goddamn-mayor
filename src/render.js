@@ -93,7 +93,8 @@ window.MM = window.MM || {};
 
   // Daylight ambient occlusion. Much gentler than a night scene: in the
   // reference the sunlit sides stay pale and only the shaded face goes grey.
-  var LM = 0.80, RM = 0.63;                 // left face / right face darkening
+  // Matched to gfx.js so a civic block sits in the same light as a lot.
+  var LM = 0.74, RM = 0.63;                 // left face / right face darkening
   function mul (c, k) { return [c[0] * k, c[1] * k, c[2] * k]; }
   function box (top) { return [top, mul(top, LM), mul(top, RM)]; }
 
@@ -315,7 +316,10 @@ window.MM = window.MM || {};
     // specular up here: top, +v face, +u face. Keeps a one-tile clinic lit
     // the same way as the tower next door.
     var Gs = MM.gfx && MM.gfx.spec;
-    var SP = Gs ? [1 + 0.06, 1 + Gs(0, 1) / LM, 1 + Gs(1, 0) / RM] : [1, 1, 1];
+    var SP = Gs ? [1 + 0.15, 1 + Gs(0, 1) / LM, 1 + Gs(1, 0) / RM] : [1, 1, 1];
+    // and the same warm-sun / cool-sky grading gfx.faces applies, so a civic
+    // block one tile wide is lit like the tower next door
+    var FL = (MM.gfx && MM.gfx.FL) || [[1, 1, 1], [1, 1, 1], [1, 1, 1]];
     for (k in PAL) {
       c = PAL[k];
       C[k] = 'rgb(' + (clamp(c[0] * rm, 0, 255) | 0) + ',' +
@@ -325,14 +329,16 @@ window.MM = window.MM || {};
       var src = FACE[k], dst = this._F[k];
       for (var f = 0; f < 3; f++) {
         c = src[f];
-        dst[f] = 'rgb(' + (clamp(c[0] * rm * SP[f], 0, 255) | 0) + ',' +
-          (clamp(c[1] * gm * SP[f], 0, 255) | 0) + ',' + (clamp(c[2] * bm * SP[f], 0, 255) | 0) + ')';
+        dst[f] = 'rgb(' + (clamp(c[0] * rm * SP[f] * FL[f][0], 0, 255) | 0) + ',' +
+          (clamp(c[1] * gm * SP[f] * FL[f][1], 0, 255) | 0) + ',' +
+          (clamp(c[2] * bm * SP[f] * FL[f][2], 0, 255) | 0) + ')';
       }
     }
     for (f = 0; f < 3; f++) {
       c = FACE_DEF[f];
-      this._Fdef[f] = 'rgb(' + (clamp(c[0] * rm * SP[f], 0, 255) | 0) + ',' +
-        (clamp(c[1] * gm * SP[f], 0, 255) | 0) + ',' + (clamp(c[2] * bm * SP[f], 0, 255) | 0) + ')';
+      this._Fdef[f] = 'rgb(' + (clamp(c[0] * rm * SP[f] * FL[f][0], 0, 255) | 0) + ',' +
+        (clamp(c[1] * gm * SP[f] * FL[f][1], 0, 255) | 0) + ',' +
+        (clamp(c[2] * bm * SP[f] * FL[f][2], 0, 255) | 0) + ')';
     }
   };
 
@@ -695,6 +701,41 @@ window.MM = window.MM || {};
     ctx.restore();
   };
 
+  /* ---------- ground grain ---------------------------------------------
+     A lawn painted as one flat fill reads as paper, and a lot's own pads
+     cover whatever texture ground.js laid under them. One soft blob per
+     tile - light or dark, placed and sized off the tile hash so it never
+     moves - breaks the fill up without adding a colour to the palette.
+     Two paths, two fills, whatever the size of the city.
+
+     `source-atop` for the same reason the shadows use it: the grain belongs
+     on ground that is already painted, not on the open sky past the shore. */
+
+  Renderer.prototype._dapple = function (s) {
+    var sc = this.scale;
+    if (sc < 0.5 || !this._nAll) return;
+    var ctx = this.ctx, fx = HW * sc, fy = HH * sc, ox = this.ox, oy = this.oy;
+    var n = this._nAll, buf = this._bAll, pass, k, i, x, y, a, b, r;
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-atop';
+    for (pass = 0; pass < 2; pass++) {
+      ctx.fillStyle = pass ? 'rgba(255,250,226,0.055)' : 'rgba(18,26,44,0.055)';
+      ctx.beginPath();
+      for (k = 0; k < n; k++) {
+        i = buf[k]; x = i % G; y = (i / G) | 0;
+        if ((hash2(x + pass * 97, y + pass * 31) < 0.42)) continue;
+        a = (hash2(x + 11, y + pass * 7) - 0.5) * 1.1;
+        b = (hash2(x + pass * 53, y + 19) - 0.5) * 1.1;
+        r = 0.30 + hash2(x + 3, y + pass * 23) * 0.34;
+        ctx.moveTo((a - b + r) * fx + (x - y) * fx + ox, (a + b) * fy + (x + y) * fy + oy);
+        ctx.ellipse((a - b) * fx + (x - y) * fx + ox, (a + b) * fy + (x + y) * fy + oy,
+          r * fx, r * fy * 1.15, 0, 0, TAU);
+      }
+      ctx.fill();
+    }
+    ctx.restore();
+  };
+
   /* ---------- shadows -------------------------------------------------
      A cast shadow is the footprint swept along the sun's ground direction -
      the convex hull of the footprint and the same footprint pushed out by
@@ -800,11 +841,19 @@ window.MM = window.MM || {};
     this._casters(s, function (h) { sweptPath(g, 4, cast ? h * lx : 0, cast ? h * ly : 0); });
   };
 
+  /* The layer is built at half resolution and blown back up on the blit.
+     A blur costs a pass over every pixel, and at full size the two of them
+     were the most expensive thing in a rebuild by a wide margin - a quarter
+     of the pixels is a quarter of the cost, and the upscale softens the
+     edges the blur was there to soften anyway. */
+  var SH_RES = 0.5;
+
   Renderer.prototype._shadows = function (s) {
     if (!this._nBld) return;
     var sc = this.scale;
     if (sc < 0.26) return;                       // finer than the blur can carry
-    var ctx = this.ctx, W = this.w, H = this.h, dpr = Math.min(this.dpr || 1, 2);
+    var ctx = this.ctx, W = this.w, H = this.h;
+    var dpr = Math.min(this.dpr || 1, 2) * SH_RES;
     var cw = Math.max(1, Math.round(W * dpr)), chh = Math.max(1, Math.round(H * dpr));
     var shc = this._shc;
     if (shc.width !== cw || shc.height !== chh) { shc.width = cw; shc.height = chh; this._shctx = null; }
@@ -812,35 +861,39 @@ window.MM = window.MM || {};
     var g = this._shctx;
 
     var lx = CAST.len * CAST.x, ly = CAST.len * CAST.y;
-
-    function bake (ctx2, alpha, blur) {
-      ctx2.save();
-      ctx2.globalCompositeOperation = 'source-atop';
-      ctx2.globalAlpha = alpha;
-      ctx2.filter = 'blur(' + blur.toFixed(2) + 'px)';
-      ctx2.drawImage(shc, 0, 0, W, H);
-      ctx2.restore();
-    }
-
-    // pass 1 - the long throw, softest
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, W, H);
-    g.fillStyle = CAST.tint;
-    g.beginPath();
-    this._casters(s, function (h) { sweptPath(g, 4, h * lx, h * ly); });
-    g.fill();
-    bake(ctx, CAST.cast, Math.max(0.9, 1.8 * sc));
 
-    // pass 2 - the contact shadow, a tight dark seam where the walls meet
-    // the ground. Without it every building reads as a decal on the lawn.
-    g.clearRect(0, 0, W, H);
+    // Two darkness levels, no stacking, one composite.
+    //
+    // Within a single fill() overlapping subpaths union rather than pile up,
+    // which is what stops a street of shadows turning into black blotches.
+    // Getting the same between the two levels is what `destination-over`
+    // buys: the contact seams go down first, then the long throws paint only
+    // where the layer is still clear, so neither darkens the other.
+    //
+    // The contact seam is the tight one - a building without it reads as a
+    // decal on the lawn - and the blur then blends the two into a falloff.
+    g.fillStyle = CAST.foot;
     g.beginPath();
     this._casters(s, function (h) {
       var r = h * 0.10; if (r > 5 * sc) r = 5 * sc;
       sweptPath(g, 4, r * CAST.x, r * CAST.y);
     });
     g.fill();
-    bake(ctx, CAST.foot, Math.max(0.6, 1.0 * sc));
+
+    g.globalCompositeOperation = 'destination-over';
+    g.fillStyle = CAST.tint;
+    g.beginPath();
+    this._casters(s, function (h) { sweptPath(g, 4, h * lx, h * ly); });
+    g.fill();
+    g.globalCompositeOperation = 'source-over';
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-atop';
+    ctx.filter = 'blur(' + Math.max(0.7, 1.25 * sc).toFixed(2) + 'px)';
+    ctx.drawImage(shc, 0, 0, W, H);
+    ctx.restore();
   };
 
   /* ---------- extruded blocks ---------------------------------------- */
@@ -1675,6 +1728,7 @@ window.MM = window.MM || {};
     this._ground(s);
     this._roadPass(s);
     this._overlayPass(s);
+    this._dapple(s);
     this._shadows(s);
 
     var dim = this.overlay && this.overlay !== 'none';

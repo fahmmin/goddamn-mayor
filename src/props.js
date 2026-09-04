@@ -40,7 +40,7 @@ window.MM = window.MM || {};
       person: person, car: car, parasol: para,
       trunk: G.css(PAL.trunk),
       // the ground shadow a tree throws; see tshadow()
-      tshade: G.CAST ? 'rgba(38,46,74,0.26)' : 'rgba(0,0,0,0)',
+      tshade: G.CAST ? 'rgba(34,42,70,0.32)' : 'rgba(0,0,0,0)',
       tbase: [G.css(PAL.treeA), G.css(PAL.treeC), G.css(PAL.treeB)],
       thi: [G.css(mul(PAL.treeA, 1.26)), G.css(mul(PAL.treeC, 1.26)), G.css(mul(PAL.treeB, 1.26))],
       leaf: G.css(mul(PAL.treeB, 1.1)),
@@ -159,22 +159,43 @@ window.MM = window.MM || {};
      base and another where the crown lands, which fill as one capsule. One
      path and one fill for the whole batch, so a clump throws a single pool
      instead of a stack of blobs darkening each other. */
-  function tshadow (ctx) {
+  var SHA = 0, SHK = 0;                  // cast angle and length, from gfx.CAST
+  function shSync () {
     var CA = G.CAST;
-    if (!CA) return;
-    var i, s, hx, hy, r;
+    if (!CA) return false;
+    SHA = Math.atan2(CA.y, CA.x); SHK = CA.len;
+    return true;
+  }
+
+  function tshadow (ctx) {
+    if (!shSync()) return;
+    var CA = G.CAST, i, s, r, hx, hy;
     ctx.beginPath();
     for (i = 0; i < TN; i++) {
       s = TS[i];
-      r = s * TTOP[TV[i]] * CA.len;
+      r = s * TTOP[TV[i]] * SHK * 0.5;             // half the throw
       hx = r * CA.x; hy = r * CA.y;
-      ctx.moveTo(TX[i] + s * 0.30, TY[i]);
-      ctx.ellipse(TX[i], TY[i], s * 0.30, s * 0.17, 0, 0, TAU);
-      ctx.moveTo(TX[i] + hx + s * 0.40, TY[i] + hy);
-      ctx.ellipse(TX[i] + hx, TY[i] + hy, s * 0.40, s * 0.24, 0, 0, TAU);
+      // one ellipse leaning along the cast, so the pool runs from the trunk
+      // to where the crown lands instead of reading as a detached disc
+      ctx.moveTo(TX[i] + hx + r + s * 0.34, TY[i] + hy);
+      ctx.ellipse(TX[i] + hx, TY[i] + hy, r + s * 0.34, s * 0.21, SHA, 0, TAU);
     }
     ctx.fillStyle = C.tshade;
     ctx.fill();
+  }
+
+  /* Ground shadow for a small prop: a soft blob pushed out along gfx.CAST by
+     however tall the thing is. A car or a lamp post with nothing under it
+     sits on the pavement the way a sticker does. Callers open one path,
+     stamp several, and fill once - it is the same cool tint as the trees.
+
+     x, y is the object's base in screen space; r its radius in screen px. */
+  function pshadow (ctx, x, y, r, h) {
+    var CA = G.CAST;
+    if (!CA) return;
+    var d = h * SHK * 0.5, dx = d * CA.x, dy = d * CA.y;
+    ctx.moveTo(x + dx + r + d, y + dy);
+    ctx.ellipse(x + dx, y + dy, r + d, r * 0.60, SHA, 0, TAU);
   }
 
   function tflush (ctx) {
@@ -277,7 +298,22 @@ window.MM = window.MM || {};
     if (e < 0) return;
     var p = o.fx / 32, n = 2 + ((hash(o.x, o.y, 35) * 3) | 0), i, t, ci, F, iu, iv;
     var along = (e < 2), off = (e === 1 || e === 3) ? -0.5 : 0.5;
-    var u0, v0, u1, v1, open = 0;
+    var u0, v0, u1, v1, open = 0, cu, cv;
+
+    // the whole row's shadows first, as one path, so they land under every
+    // car in the row and not just the one that drew them
+    if (shSync()) {
+    ctx.beginPath();
+    for (i = 0; i < n; i++) {
+      t = (i - (n - 1) * 0.5) * 0.46;
+      cu = along ? off : t; cv = along ? t : off;
+      pshadow(ctx, ix(o.cx, o.fx, cu, cv), iy(o.cy, o.fy, cu, cv, 0),
+        0.30 * o.fx, 5.0 * p);
+    }
+    ctx.fillStyle = C.tshade;
+    ctx.fill();
+    }
+
     for (i = 0; i < n; i++) {
       t = (i - (n - 1) * 0.5) * 0.46;
       if (along) { u0 = off - 0.20; u1 = off + 0.20; v0 = t - 0.21; v1 = t + 0.21; }
@@ -312,9 +348,13 @@ window.MM = window.MM || {};
       if (e >= 0 && c < 0.6) { edgePt(e, a * 1.4 - 0.7, 0.56 + b * 0.16); u = _pu; v = _pv; }
       else { u = a * 1.4 - 0.7; v = b * 1.4 - 0.7; }
       x = ix(o.cx, o.fx, u, v); y = iy(o.cy, o.fy, u, v, 0);
+      if (!i) { shSync(); ctx.beginPath(); }
+      pshadow(ctx, x, y, 1.5 * p, 4.6 * p);
       bpush(x, y - 1.9 * p, 0.95 * p, 1.55 * p, (pal + ((c * 3) | 0)) % 8);
       bpush(x, y - 3.9 * p, 0.78 * p, 0.74 * p, 8);
     }
+    ctx.fillStyle = C.tshade;
+    ctx.fill();
     bflush(ctx, C.person);
   }
 
@@ -363,6 +403,17 @@ window.MM = window.MM || {};
     edgePt(e, hash(o.x, o.y, 91) * 1.1 - 0.55, 0.86);
     var x = ix(o.cx, o.fx, _pu, _pv), y = iy(o.cy, o.fy, _pu, _pv, 0);
     var hx = x - 3.2 * p, hy = y - 16.2 * p;
+    var CA = G.CAST;
+    if (CA) {                                        // the pole lying down
+      ctx.fillStyle = C.tshade;
+      ctx.beginPath();
+      ctx.moveTo(x - 1.0 * p, y);
+      ctx.lineTo(x + 15.0 * p * CA.len * CA.x - 0.8 * p, y + 15.0 * p * CA.len * CA.y);
+      ctx.lineTo(x + 15.0 * p * CA.len * CA.x + 0.8 * p, y + 15.0 * p * CA.len * CA.y);
+      ctx.lineTo(x + 1.0 * p, y);
+      ctx.closePath();
+      ctx.fill();
+    }
     ctx.strokeStyle = C.pole;
     ctx.lineWidth = Math.max(0.6, 0.9 * p);
     ctx.beginPath();
