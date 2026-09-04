@@ -138,7 +138,7 @@ window.MM = window.MM || {};
      Baked at noon like the rest of the static cache: a long dawn shadow under
      a midday facade reads as a bug. */
   var CAST = {
-    x: 0.75, y: 0.66, len: 0.62,
+    x: 0.75, y: 0.66, len: 0.76,
     tint: 'rgba(38,46,74,0.40)',           // the long throw - cool, sky-lit
     foot: 'rgba(28,36,62,0.58)'            // the contact seam at the wall
   };
