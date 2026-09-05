@@ -13,8 +13,15 @@ while an agent is thinking. Glance over, lay two blocks, glance back.
 
 ```bash
 npm install
-npm start
+npm run serve      # → http://localhost:8080
 ```
+
+That is the build the Web3 layer targets. `npm start` still opens the Electron
+window if you prefer it next to your IDE.
+
+Two switches on the URL: `?diorama` freezes the economy and holds the city
+exactly as planned (the mode to shoot stills in), `?play` opens on the starter
+block instead of the built-out city.
 
 ## Build a Windows executable
 
@@ -42,9 +49,9 @@ NaN, out-of-range stat, or broken module contract. Both run without Electron.
 |---|---|
 | `1`-`9`, `s`, `t`, `0` | pick a build tool |
 | Left-drag | build / paint |
-| Right-drag | pan the city |
+| Right-drag | pan the city — flick and let go to throw it |
 | Wheel | zoom |
-| Arrows | pan |
+| Arrows | pan (hold them), `Shift` to sprint |
 | Space | pause / resume |
 | `+` / `-` | game speed |
 | `m` | mute |
@@ -79,12 +86,53 @@ panel later.
 | `src/events.js` | things that happen to a city |
 | `src/audio.js` | synthesized sound, no assets |
 | `src/game.js` | input, main loop, build/bulldoze, wiring |
+| `src/districts.js` | the nine districts, and what each one is worth |
+| `tools/serve.js` | static host, no dependencies |
+| `chain/` | ENSv2 addresses, ABIs, preflight — the only place npm deps live |
 
 `CONTRACT.md` is the interface between those modules and the reason several of
 them could be written at the same time.
 
-## Where this is going
+## The Web3 layer
 
-Browser-extension side panel. Then the Web3 layer — city charters as assets,
-cross-city trade, a shared metaverse map. The simulation is deliberately
-self-contained so none of that has to touch it.
+Built for **ETHOnline 2026**. Full plan in [`docs/WEB3_PLAN.md`](docs/WEB3_PLAN.md);
+daily progress in [`CHANGELOG.md`](CHANGELOG.md).
+
+> **The city is a public company and the mayor is its management.** Nine
+> districts each issue shares. Share value tracks that district's land value —
+> a number the simulation already computes every game-day. Every office, every
+> district, every parcel and every tenant is an ENS name, and the names are not
+> labels: holding one is what grants the permission to act.
+
+Three tracks, one chain (Sepolia), because a system a judge can hold in their
+head beats three bolt-ons they cannot:
+
+| Track | What it does here |
+|---|---|
+| **ENS** (ENSv2) | The city is a namespace. `mayor.…eth` **expires** with the four-year term, is **revoked** by the recall the simulation already triggers, and is **non-transferable** because an office cannot be sold — while a parcel deed can. Each district deploys its own registry and issues its own parcels. |
+| **The Graph** | A standardized ERC-4626 subgraph over the district vaults, composed with Substreams on the same chain. It is what makes the live numbers real rather than asserted. |
+| **Privy** | Embedded wallets, so anyone is in the economy in ten seconds with no seed phrase. The treasury is a shared organization wallet behind a key quorum. |
+
+### Why ENS is load-bearing, not decoration
+
+`CityOracle.push()` — the only way city data reaches the chain — requires the
+caller to hold the write role on the mayor's name. **No name, no write.** When
+the term expires the name expires and the transaction reverts on its own.
+
+The root is the *institution*, not the person: a player's own name **holds**
+`mayor.…eth` rather than being it. Term ends, the office burns, the person
+remains — identity intact, permissions gone. Permissions were never attached to
+the human; they were attached to the role.
+
+### What it does not do
+
+The simulation stays local, synchronous and deterministic. `src/*.js` never
+touches the network — the chain layer loads beside it, never inside it. Pull the
+network out and this is exactly the game it was before.
+
+### Where this is going
+
+Private lobbies: a lobby deploys its own subtree, the host picks a mayor, and
+friends join as **tenants** holding expiring, non-transferable subnames. The
+chain is already the server. After that, a municipal bond desk and a cross-city
+index — many cities, one market.
