@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "privy-docs": {
+      "type": "http",
+      "url": "https://docs.privy.io/mcp"
+    },
+    "hedera-docs": {
+      "type": "http",
+      "url": "https://docs.hedera.com/mcp"
+    }
+  }
+}
