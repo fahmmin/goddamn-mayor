@@ -94,7 +94,7 @@ global.requestAnimationFrame = global.window.requestAnimationFrame;
 global.AudioContext = undefined;   // audio must degrade to silence
 
 // --- load modules in index.html order --------------------------------------
-const ORDER = ['state.js', 'gfx.js', 'audio.js', 'policies.js', 'events.js', 'sim.js',
+const ORDER = ['state.js', 'districts.js', 'gfx.js', 'audio.js', 'policies.js', 'events.js', 'sim.js',
   'ground.js', 'roofs.js', 'props.js', 'lots.js', 'light.js', 'bridges.js', 'landmarks.js', 'sky.js', 'render.js', 'ui.js', 'demo.js'];
 // demo.js shadows loadState/saveState/sim.step when showcase mode is on. The
 // harness wants the real ones, so opt out before it loads and test its plan
