@@ -2,7 +2,24 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;">
+<!-- connect-src is the only reason this policy is not still default-src 'self'.
+     src/*.js never reaches the network; web3/bundle.js does. Hosts are listed
+     one per purpose so it is obvious what talks to what. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  style-src 'self' 'unsafe-inline';
+  script-src 'self';
+  img-src 'self' data:;
+  frame-src https://auth.privy.io;
+  connect-src 'self'
+    http://localhost:8787
+    https://api.studio.thegraph.com
+    https://gateway.thegraph.com
+    https://ethereum-sepolia-rpc.publicnode.com
+    https://rpc.sepolia.org
+    https://auth.privy.io
+    https://api.privy.io;
+">
 <title>MAYOR MAMDANI</title>
 <link rel="stylesheet" href="src/style.css">
 </head>
@@ -12,6 +29,7 @@
     <div id="hud"></div>
   </div>
   <script src="src/state.js"></script>
+  <script src="src/districts.js"></script>
   <script src="src/gfx.js"></script>
   <script src="src/audio.js"></script>
   <script src="src/policies.js"></script>
