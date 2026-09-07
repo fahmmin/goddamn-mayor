@@ -1,0 +1,13 @@
+{
+  "name": "cityhall-chain",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Deploy and operate the city's ENSv2 namespace. Deps live here, never in src/.",
+  "scripts": {
+    "preflight": "node preflight.js"
+  },
+  "dependencies": {
+    "viem": "^2.21.0"
+  }
+}

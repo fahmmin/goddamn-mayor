@@ -5,10 +5,22 @@
    an airport, a downtown of towers, a stadium, a funfair, a container port,
    a power station, a marina, hospitals, depots and forty blocks of housing.
 
-   While showcase mode is on, your own save is never read and never written -
-   MM.loadState and MM.saveState are shadowed, and the originals stay on
-   MM.demo. Set ON to false below (or MM.DEMO = false before this file loads)
-   to go back to playing your city.
+   Three modes, because the city has two jobs now:
+
+     'showcase' (default)  the planned city is where you START, and then the
+                           real economy runs on it. Your save is read and
+                           written normally; the plan is only used when there
+                           is nothing to load.
+     'diorama'             the old behaviour - economy held still, save never
+                           touched, clock crawling so the sky still turns.
+                           This is the mode to shoot renderer stills in.
+     false                 no showcase at all; open on the starter block.
+
+   Set MM.DEMO before this file loads, or put ?diorama / ?play in the URL.
+
+   'showcase' is the default because a frozen city cannot be played and cannot
+   be priced: sim.daily() is what fills s.pow, and s.pow is what every district
+   is worth. A diorama's land value is zero everywhere.
 
    The plan is laid out on the 5-tile road grid: roads on every fifth row and
    column, four-tile blocks between them. Landmarks reserve whole blocks so
@@ -17,7 +29,11 @@ window.MM = window.MM || {};
 (function (MM) {
   'use strict';
 
-  var ON = MM.DEMO !== false;
+  var q = (typeof location !== 'undefined' && location.search) || '';
+  var MODE = /[?&]diorama/.test(q) ? 'diorama'
+    : /[?&]play/.test(q) ? false
+    : MM.DEMO === undefined ? 'showcase' : MM.DEMO;
+  var ON = MODE !== false;
 
   var G = MM.GRID, T = MM.TILE, idx = MM.idx;
   var hash = (MM.gfx && MM.gfx.hash) || function (x, y, k) {
@@ -42,7 +58,8 @@ window.MM = window.MM || {};
     [11, 31, 4, 4, 'depot',    T.PARK],
     [30, 37, 4, 4, 'port',     T.IND],
     [21, 41, 4, 4, 'power',    T.IND],
-    [16, 41, 4, 4, 'solar',    T.IND]
+    [16, 41, 4, 4, 'solar',    T.IND],
+    [21, 21, 3, 3, 'hero',     T.PARK]   // the one thing allowed to break the height rules
   ];
 
   /* whole blocks kept green, so downtown has somewhere to have lunch */
@@ -197,22 +214,34 @@ window.MM = window.MM || {};
   MM.buildDemoCity = build;
 
   if (ON) {
-    MM.demo = { loadState: MM.loadState, saveState: MM.saveState, sim: MM.sim };
-    MM.loadState = function () { return build(); };
-    MM.saveState = function () { return true; };      // never touch the real save
+    MM.demo = { loadState: MM.loadState, saveState: MM.saveState, sim: MM.sim, mode: MODE };
 
-    /* A diorama, not a save file: hold the economy still so the city stays
-       exactly as planned, and advance the clock slowly so the sky still runs
-       through dawn, noon, dusk and night. */
-    var sub = 0;
-    MM.sim = {
-      step: function (s) {
-        if (++sub < 6) return;                         // ~60s per game day
-        sub = 0;
-        s.tick = (s.tick | 0) + 1;
-        if (s.tick >= MM.TICKS_PER_DAY) { s.tick = 0; s.day = (s.day | 0) + 1; }
-      },
-      K: MM.demo.sim ? MM.demo.sim.K : undefined
-    };
+    if (MODE === 'diorama') {
+      MM.loadState = function () { return build(); };
+      MM.saveState = function () { return true; };    // never touch the real save
+
+      /* A diorama, not a save file: hold the economy still so the city stays
+         exactly as planned, and advance the clock slowly so the sky still runs
+         through dawn, noon, dusk and night. */
+      var sub = 0;
+      MM.sim = {
+        step: function (s) {
+          if (++sub < 6) return;                       // ~60s per game day
+          sub = 0;
+          s.tick = (s.tick | 0) + 1;
+          if (s.tick >= MM.TICKS_PER_DAY) { s.tick = 0; s.day = (s.day | 0) + 1; }
+        },
+        K: MM.demo.sim ? MM.demo.sim.K : undefined
+      };
+    } else {
+      /* The plan is a starting position, not a cage. Load a real save if there
+         is one; otherwise open on the built-out city and let the economy run.
+         sim and saveState are left exactly as they were. */
+      MM.loadState = function () {
+        var saved = null;
+        try { saved = MM.demo.loadState(); } catch (e) { saved = null; }
+        return saved || build();
+      };
+    }
   }
 })(window.MM);

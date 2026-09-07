@@ -38,19 +38,37 @@ window.MM = window.MM || {};
     else if (res.msg) { MM.audio.play('error'); ui.toast(res.msg, 'bad'); }
   }
 
+  // A drag is measured as well as applied: let go while still moving and the
+  // map keeps going. One flick crosses the borough, which a 1:1 drag never
+  // could - the city is some three thousand pixels wide at scale 1.
+  let velX = 0, velY = 0, lastT = 0;
+
   canvas.addEventListener('mousedown', function (e) {
+    renderer.stopPan();                       // grabbing the map stops it dead
     if (e.button === 0) { painting = true; place(e.clientX, e.clientY); }
-    else { panning = true; movedWhilePanning = false; }
-    lastX = e.clientX; lastY = e.clientY;
+    else { panning = true; movedWhilePanning = false; velX = velY = 0; }
+    lastX = e.clientX; lastY = e.clientY; lastT = performance.now();
   });
   canvas.addEventListener('mousemove', function (e) {
     const dx = e.clientX - lastX, dy = e.clientY - lastY;
     lastX = e.clientX; lastY = e.clientY;
     renderer.hover = renderer.screenToTile(e.clientX, e.clientY);
-    if (panning) { movedWhilePanning = movedWhilePanning || Math.abs(dx) + Math.abs(dy) > 2; renderer.panBy(dx, dy); }
-    else if (painting) place(e.clientX, e.clientY);
+    if (panning) {
+      movedWhilePanning = movedWhilePanning || Math.abs(dx) + Math.abs(dy) > 2;
+      renderer.panBy(dx, dy);
+      // running average of px/s, so one jittery sample cannot throw the map
+      const now = performance.now(), dt = Math.max(4, now - lastT);
+      lastT = now;
+      const k = Math.min(1, dt / 90);
+      velX += (dx / dt * 1000 - velX) * k;
+      velY += (dy / dt * 1000 - velY) * k;
+    } else if (painting) place(e.clientX, e.clientY);
   });
-  window.addEventListener('mouseup', function () { painting = false; panning = false; });
+  window.addEventListener('mouseup', function () {
+    // only throw it if the drag was still moving when it was let go
+    if (panning && performance.now() - lastT < 90) renderer.fling(velX, velY);
+    painting = false; panning = false;
+  });
   canvas.addEventListener('mouseleave', function () { painting = false; panning = false; renderer.hover = null; });
   canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   canvas.addEventListener('wheel', function (e) {
@@ -61,6 +79,23 @@ window.MM = window.MM || {};
   const keyToTile = {};
   MM.BUILDABLE.forEach(function (t) { keyToTile[MM.TILE_INFO[t].key] = t; });
 
+  // Held arrows drive the camera continuously instead of jumping 60px per
+  // key-repeat: the repeat does not start for half a second and then arrives
+  // unevenly, which made crossing the map feel like wading. The renderer
+  // integrates this against real time, so it is the same speed at any frame
+  // rate, and shift sprints.
+  const PAN_KEY = { arrowleft: [1, 0], arrowright: [-1, 0], arrowup: [0, 1], arrowdown: [0, -1] };
+  const held = {};
+  function aimCamera (boost) {
+    let dx = 0, dy = 0;
+    for (const k in held) {
+      if (!held[k]) continue;
+      dx += PAN_KEY[k][0]; dy += PAN_KEY[k][1];
+    }
+    const m = Math.sqrt(dx * dx + dy * dy);
+    renderer.panHold(m ? dx / m : 0, m ? dy / m : 0, boost);
+  }
+
   window.addEventListener('keydown', function (e) {
     if (e.target && /input|textarea/i.test(e.target.tagName)) return;
     const k = e.key.toLowerCase();
@@ -69,8 +104,20 @@ window.MM = window.MM || {};
     if (k === '+' || k === '=') { state.speed = Math.min(3, state.speed + 1); MM.audio.play('ui'); return; }
     if (k === '-') { state.speed = Math.max(0, state.speed - 1); MM.audio.play('ui'); return; }
     if (k === 'm') { MM.audio.setMuted(!MM.audio.muted); ui.setMuted(MM.audio.muted); return; }
-    const pan = { arrowleft: [60, 0], arrowright: [-60, 0], arrowup: [0, 60], arrowdown: [0, -60] }[k];
-    if (pan) { e.preventDefault(); renderer.panBy(pan[0], pan[1]); }
+    if (PAN_KEY[k]) { e.preventDefault(); held[k] = true; aimCamera(e.shiftKey); }
+  });
+
+  window.addEventListener('keyup', function (e) {
+    const k = e.key.toLowerCase();
+    if (PAN_KEY[k]) { held[k] = false; aimCamera(e.shiftKey); }
+    else if (k === 'shift') aimCamera(false);
+  });
+  // A window that loses focus never sees the keyup, and the map would drift
+  // away on its own until it was clicked again.
+  window.addEventListener('blur', function () {
+    for (const k in held) held[k] = false;
+    renderer.panHold(0, 0, false);
+    renderer.stopPan();
   });
 
   window.addEventListener('resize', function () { renderer.resize(); });

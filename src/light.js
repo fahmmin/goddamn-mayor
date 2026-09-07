@@ -298,8 +298,55 @@ window.MM = window.MM || {};
     ctx.restore();
   }
 
+  /* ---- 5. aerial perspective ------------------------------------------
+     Air is not clear. Over distance it scatters enough light to lift the far
+     end of a view towards the colour of the sky and flatten its contrast,
+     and an isometric camera puts "far" straight up the screen. Without it a
+     city drawn at one saturation from the near kerb to the back of the map
+     reads as a flat sheet of stickers however well it is lit.
+
+     Live, not baked: it is keyed to the screen, not to the ground, so it has
+     to survive a pan without the cache carrying yesterday's horizon. */
+  function haze (ctx, R) {
+    var a = 0.17 * clamp(0.30 + sun.day * 0.85, 0, 1);
+    if (a < 0.01) return;
+    var tone = skyTone(), h = R.h * 0.62;
+    var g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, rgba(tone, a));
+    g.addColorStop(0.40, rgba(tone, a * 0.42));
+    g.addColorStop(1, rgba(tone, 0));
+    ctx.save();
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, R.w, h);
+    ctx.restore();
+  }
+
+  /* ---- 6. what the washes depend on ----------------------------------
+     sky(), glow() and haze() each evaluate a gradient across the whole
+     viewport. That costs 2ms for a linear one and 3.6ms for a radial - ten
+     times what it costs to blit the same pixels - and there are four of them
+     in a frame. None of them touches the grid or the camera: they are a pure
+     function of the light and the window, so render.js bakes them into
+     offscreen layers and blits those instead.
+
+     This is the key that says when a bake is stale. The washes are smooth,
+     so both the sun's position and the light are quantised: a gradient that
+     moves three pixels is the same gradient, and without the buckets the
+     layer would rebake every frame and we would be paying for the gradient
+     again plus a blit.                                                     */
+  function key (R) {
+    return ((sun.day * 20) | 0) + ',' + ((sun.gold * 20) | 0) + ',' +
+      ((sun.elev * 20) | 0) + ',' + ((sun.sx / 16) | 0) + ',' + ((sun.sy / 16) | 0) +
+      ',' + (R.w | 0) + 'x' + (R.h | 0);
+  }
+
+  /* Is there anything in the additive wash at all? Through the middle of the
+     night there is not, and an empty layer is a blit worth skipping. */
+  function glowAlpha () { return 0.10 * sun.day + 0.42 * sun.gold; }
+
   MM.light = {
     sun: sun, update: update, skyTone: skyTone,
-    sky: sky, reflect: reflect, shimmer: shimmer, glow: glow
+    sky: sky, reflect: reflect, shimmer: shimmer, glow: glow, haze: haze,
+    key: key, glowAlpha: glowAlpha
   };
 })(window.MM);

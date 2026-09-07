@@ -115,25 +115,66 @@ window.MM = window.MM || {};
      and painter's order comes free because this rides inside the existing
      wall fill. The city is baked at noon (see render.js _daynight), so the
      default sun points at noon; setSun is the art-direction knob.           */
-  var _su = 0.10, _sv = 1, _sgain = 0.30, _sroof = 0.06;
+  /* A roof faces the whole sky and the sun; a wall sees a slice of one and
+     grazes the other. With the roof at 1.06 and the sunward wall at 1.08 the
+     two came out the same value, which is what flattened a block into a
+     silhouette - three faces, two tones. Keep them a clear step apart. */
+  var _su = 0.10, _sv = 1, _sgain = 0.26, _sroof = 0.15;
   function setSun (u, v, gain, roof) {
     var m = Math.sqrt(u * u + v * v) || 1;
     _su = u / m; _sv = v / m;
     if (gain !== undefined) _sgain = gain;
     if (roof !== undefined) _sroof = roof;
   }
+  /* Where a shadow lands on the ground, and how dark.
+
+     The sun sits screen-upper-left, so a shadow falls down and to the right -
+     towards the camera, which is the only place an isometric shadow can be
+     seen at all. `len` is the ground reach per pixel of drawn height; `x, y`
+     is the unit direction it reaches in. render.js casts the building
+     silhouettes and props.js the trees, and both read this, so a tree and the
+     block behind it agree about where the sun is.
+
+     Baked at noon like the rest of the static cache: a long dawn shadow under
+     a midday facade reads as a bug. */
+  var CAST = {
+    x: 0.75, y: 0.66, len: 0.76,
+    tint: 'rgba(38,46,74,0.40)',           // the long throw - cool, sky-lit
+    foot: 'rgba(28,36,62,0.58)'            // the contact seam at the wall
+  };
+
   /* nu, nv must be a unit face normal in tile space */
   function spec (nu, nv) {
     var d = nu * _su + nv * _sv;
     return d <= 0 ? 0 : _sgain * d * d * d;
   }
 
+  /* ---- the colour of the light, per face ------------------------------
+     Value alone is not what makes a lit face read as lit. A roof square to
+     the sun takes the sun's colour and goes warm; a wall turned away from it
+     is lit by the sky alone and goes blue. Grading the three faces apart
+     chromatically as well as in value is most of the difference between a
+     flat palette and something that looks lit - and it costs nothing, since
+     these multipliers fold into the same one that css() already applies.
+
+     Indexed the way every face triple in the codebase is: top, +v (left,
+     towards the sun), +u (right, turned away). */
+  var FL = [
+    [1.050, 1.018, 0.940],                   // top: full sun
+    [1.020, 1.004, 0.982],                   // +v: grazing sun
+    [0.938, 0.972, 1.082]                    // +u: sky only
+  ];
+  function lit (c, k, f) {
+    var m = FL[f];
+    return [c[0] * k * m[0], c[1] * k * m[1], c[2] * k * m[2]];
+  }
+
   /* face triple from one top colour: [top, left, right] */
-  var LM = 0.78, RM = 0.60;                  // daylight ambient occlusion
+  var LM = 0.74, RM = 0.63;                  // daylight ambient occlusion
   function faces (top) {
-    return [css(mul(top, 1 + _sroof)),
-      css(mul(top, LM + spec(0, 1))),
-      css(mul(top, RM + spec(1, 0)))];
+    return [css(lit(top, 1 + _sroof, 0)),
+      css(lit(top, LM + spec(0, 1), 1)),
+      css(lit(top, RM + spec(1, 0), 2))];
   }
 
   /* ---- daylight diorama palette --------------------------------------
@@ -628,7 +669,7 @@ window.MM = window.MM || {};
     text3D: text3D, textWall: textWall, textFlat: textFlat,
     glyphRects: glyphRects, textWidth: textWidth,
     hash: hash, clamp: clamp, lerp: lerp, mul: mul, mix: mix,
-    setLight: setLight, setSun: setSun, spec: spec,
+    setLight: setLight, setSun: setSun, spec: spec, CAST: CAST, FL: FL,
     css: css, cssA: cssA, raw: raw, faces: faces, night: night,
     PAL: PAL, CARS: CARS, LM: LM, RM: RM
   };

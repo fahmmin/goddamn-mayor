@@ -18,7 +18,32 @@ window.MM = window.MM || {};
   var MIN_S = 0.35, MAX_S = 2.6;
   var TAU = Math.PI * 2;
   var NO_DASH = [];
-  var CACHE_M = 192;                       // static-cache margin in css px
+  var CACHE_M = 192;                       // smallest static-cache margin, css px
+  /* Device-pixel cap for the city cache (~40MB at 4 bytes a pixel). The grid
+     is only 48x48, so at ordinary zooms the whole city fits inside this and a
+     pan never rebuilds anything - which is the entire point, because a rebuild
+     is most of a second. The cap is what stops that turning into a quarter of
+     a gigabyte of canvas when someone zooms all the way in. */
+  var CACHE_PX = 10e6;
+  /* When the whole city is *nearly* affordable, buy it by softening the cache
+     rather than by giving up coverage: half a device pixel of sharpness on a
+     static image is a far better trade than a 600ms freeze every time the
+     camera moves. Below this, coverage is the thing that gets dropped - and
+     that is the zoomed-right-in case, where sharpness is what you came for
+     and there are few enough tiles on screen to rebuild cheaply. */
+  var CACHE_DPR_MIN = 1.0;
+  /* The window-light layer is a bloom - soft glows blitted additively at less
+     than full alpha - so it carries no detail worth a device pixel. Holding it
+     at half the cache's resolution is invisible and takes a second full-size
+     canvas off the books.
+
+     That matters more than it sounds. Chromium keeps 2D canvases on the GPU
+     only up to a memory budget, and silently drops the lot to software past
+     it - at roughly ten times the cost. The city cache, its light layer, the
+     shadow layer and the live canvas are all large and all live at once, so
+     total canvas memory is a real constraint here, not an afterthought:
+     tools/perf.js reports it for that reason. */
+  var LIGHT_RES = 0.5;
 
   var DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];   // d ^ 1 == reverse
   var DIRSCRATCH = [0, 0, 0, 0];
@@ -93,7 +118,8 @@ window.MM = window.MM || {};
 
   // Daylight ambient occlusion. Much gentler than a night scene: in the
   // reference the sunlit sides stay pale and only the shaded face goes grey.
-  var LM = 0.80, RM = 0.63;                 // left face / right face darkening
+  // Matched to gfx.js so a civic block sits in the same light as a lot.
+  var LM = 0.74, RM = 0.63;                 // left face / right face darkening
   function mul (c, k) { return [c[0] * k, c[1] * k, c[2] * k]; }
   function box (top) { return [top, mul(top, LM), mul(top, RM)]; }
 
@@ -205,9 +231,28 @@ window.MM = window.MM || {};
     this._cctx = null;
     this._lc = document.createElement('canvas');     // window lights, same frame
     this._lctx = null;
+    this._shc = document.createElement('canvas');    // shadow layer, blurred on blit
+    this._shctx = null;
     this._cacheKey = '';
     this._cacheOx = 0; this._cacheOy = 0; this._cacheW = 0; this._cacheH = 0;
+    this._cacheMx = CACHE_M; this._cacheMy = CACHE_M;
+    this._cacheScale = 0; this._cacheDpr = 1;
+    // the region the cache actually holds, in camera-independent screen units
+    this._covL = 0; this._covR = 0; this._covT = 0; this._covB = 0;
+    this._still = 0;                 // frames the camera has been at rest
+    this._kx = 0; this._ky = 0; this._kv = 0; this._kboost = 1;
+    this._flx = 0; this._fly = 0;
+    this._cacheRev = -1; this._look = null; this._lookPrev = null;
+    this._clipR = null;
+    this._lastOx = NaN; this._lastOy = NaN; this._lastScale = NaN;
     this._skipVeh = false;
+
+    // baked full-screen washes (see _bakeAtmo)
+    this._bgL = null; this._bgLx = null;
+    this._addL = null; this._addLx = null;
+    this._ovL = null; this._ovLx = null;
+    this._atmoKey = ''; this._addOn = false;
+    this._lampSprite = null; this._lampKey = '';
 
     this.resize();
   }
@@ -231,20 +276,98 @@ window.MM = window.MM || {};
     c.width = Math.max(1, Math.round(w * dpr));
     c.height = Math.max(1, Math.round(h * dpr));
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);   // setting .width wipes state
-    this._buildVignette();
+    this._atmoKey = '';                            // the washes are viewport-sized
   };
 
-  Renderer.prototype._buildVignette = function () {
-    var ctx = this.ctx, w = this.w, h = this.h;
+  /* The vignette is a radial gradient over the whole viewport - the single
+     most expensive fill in the frame at 3.6ms. It is now baked into the
+     over-layer instead of being evaluated live, so this only builds the
+     gradient object, into whichever context is doing the baking. */
+  Renderer.prototype._buildVignette = function (ctx) {
+    var w = this.w, h = this.h;
     var g = ctx.createRadialGradient(w * 0.5, h * 0.46, Math.min(w, h) * 0.20,
       w * 0.5, h * 0.5, Math.max(w, h) * 0.78);
     g.addColorStop(0, 'rgba(0,0,0,0)');
     g.addColorStop(0.62, 'rgba(0,0,0,0.16)');
     g.addColorStop(1, 'rgba(0,0,0,0.58)');
-    this._vig = g;
+    return g;
   };
 
   Renderer.prototype.panBy = function (dx, dy) { this.ox += dx; this.oy += dy; };
+
+  /* ---------- camera motion --------------------------------------------
+     Crossing the map was a chore quite apart from the frame rate. A drag
+     moved the view one pixel per pixel of mouse, and an arrow key jumped 60px
+     per key-repeat - which the operating system sits on for half a second
+     before it starts, and then delivers unevenly. The city is some three
+     thousand pixels across at scale 1. Neither is a way to get across it.
+
+     So the camera gets a velocity instead of a position. Held keys accelerate
+     it, a flick of the mouse hands it momentum, and both are integrated here
+     against the frame's own dt: the renderer is the only thing that sees
+     every frame, and pixels per second is the only honest unit for "how fast
+     does the map move". game.js just says which way.                       */
+  var PAN_SPD   = 1800;      // px/s at full tilt on the keyboard
+  var PAN_BOOST = 2.75;      // ... and with shift held: the whole map in a second
+  var PAN_RAMP  = 9;         // how quickly it gets up to that, per second
+  var FLING_K   = 3.6;       // how quickly a thrown map slows down, per second
+  var FLING_MIN = 14;        // px/s at which it has stopped
+  var FLING_MAX = 7000;      // and the fastest a throw can be
+
+  /* Which way the held keys are pointing, as a unit vector. */
+  Renderer.prototype.panHold = function (dx, dy, boost) {
+    this._kx = dx || 0; this._ky = dy || 0;
+    this._kboost = boost ? PAN_BOOST : 1;
+    if (this._kx || this._ky) { this._flx = 0; this._fly = 0; }
+  };
+
+  /* Throw the map, in px/s. */
+  Renderer.prototype.fling = function (vx, vy) {
+    var m = Math.sqrt(vx * vx + vy * vy);
+    if (m < FLING_MIN) return;
+    if (m > FLING_MAX) { vx = vx / m * FLING_MAX; vy = vy / m * FLING_MAX; }
+    this._flx = vx; this._fly = vy;
+  };
+
+  Renderer.prototype.stopPan = function () { this._flx = 0; this._fly = 0; this._kv = 0; };
+
+  Renderer.prototype._camera = function (dt) {
+    var t = dt / 1000;
+    if (t > 0.1) t = 0.1;                  // never fast-forward after a stall
+
+    // keyboard: ease up to speed, so a tap nudges and a hold sprints
+    var want = (this._kx || this._ky) ? 1 : 0;
+    this._kv += (want - this._kv) * Math.min(1, PAN_RAMP * t);
+    if (this._kv > 0.002) {
+      var sp = PAN_SPD * this._kboost * this._kv * t;
+      this.ox += this._kx * sp; this.oy += this._ky * sp;
+    }
+
+    // and the throw, decaying exponentially
+    if (this._flx || this._fly) {
+      this.ox += this._flx * t; this.oy += this._fly * t;
+      var k = Math.exp(-FLING_K * t);
+      this._flx *= k; this._fly *= k;
+      if (Math.abs(this._flx) + Math.abs(this._fly) < FLING_MIN) { this._flx = 0; this._fly = 0; }
+    }
+
+    this.clampCamera();
+  };
+
+  /* Keep some city on screen. Without this a good throw sends the map into
+     the void and the player has to go looking for it. */
+  Renderer.prototype.clampCamera = function () {
+    var box = this._cityBox();
+    var mx = this.w * 0.34, my = this.h * 0.34;   // how much may leave the frame
+    var lo = mx - box.r, hi = this.w - mx - box.l;
+    if (lo > hi) { lo = hi = (lo + hi) * 0.5; }
+    if (this.ox < lo) { this.ox = lo; this._flx = 0; }
+    else if (this.ox > hi) { this.ox = hi; this._flx = 0; }
+    lo = my - box.b; hi = this.h - my - box.t;
+    if (lo > hi) { lo = hi = (lo + hi) * 0.5; }
+    if (this.oy < lo) { this.oy = lo; this._fly = 0; }
+    else if (this.oy > hi) { this.oy = hi; this._fly = 0; }
+  };
 
   Renderer.prototype.zoomAt = function (px, py, delta) {
     var r = this.canvas.getBoundingClientRect();
@@ -256,6 +379,7 @@ window.MM = window.MM || {};
     this.ox = mx - (mx - this.ox) * k;      // keep the world point under the cursor put
     this.oy = my - (my - this.oy) * k;
     this.scale = next;
+    this.clampCamera();
   };
 
   Renderer.prototype.centerOn = function (tx, ty) {
@@ -313,7 +437,10 @@ window.MM = window.MM || {};
     // specular up here: top, +v face, +u face. Keeps a one-tile clinic lit
     // the same way as the tower next door.
     var Gs = MM.gfx && MM.gfx.spec;
-    var SP = Gs ? [1 + 0.06, 1 + Gs(0, 1) / LM, 1 + Gs(1, 0) / RM] : [1, 1, 1];
+    var SP = Gs ? [1 + 0.15, 1 + Gs(0, 1) / LM, 1 + Gs(1, 0) / RM] : [1, 1, 1];
+    // and the same warm-sun / cool-sky grading gfx.faces applies, so a civic
+    // block one tile wide is lit like the tower next door
+    var FL = (MM.gfx && MM.gfx.FL) || [[1, 1, 1], [1, 1, 1], [1, 1, 1]];
     for (k in PAL) {
       c = PAL[k];
       C[k] = 'rgb(' + (clamp(c[0] * rm, 0, 255) | 0) + ',' +
@@ -323,14 +450,16 @@ window.MM = window.MM || {};
       var src = FACE[k], dst = this._F[k];
       for (var f = 0; f < 3; f++) {
         c = src[f];
-        dst[f] = 'rgb(' + (clamp(c[0] * rm * SP[f], 0, 255) | 0) + ',' +
-          (clamp(c[1] * gm * SP[f], 0, 255) | 0) + ',' + (clamp(c[2] * bm * SP[f], 0, 255) | 0) + ')';
+        dst[f] = 'rgb(' + (clamp(c[0] * rm * SP[f] * FL[f][0], 0, 255) | 0) + ',' +
+          (clamp(c[1] * gm * SP[f] * FL[f][1], 0, 255) | 0) + ',' +
+          (clamp(c[2] * bm * SP[f] * FL[f][2], 0, 255) | 0) + ')';
       }
     }
     for (f = 0; f < 3; f++) {
       c = FACE_DEF[f];
-      this._Fdef[f] = 'rgb(' + (clamp(c[0] * rm * SP[f], 0, 255) | 0) + ',' +
-        (clamp(c[1] * gm * SP[f], 0, 255) | 0) + ',' + (clamp(c[2] * bm * SP[f], 0, 255) | 0) + ')';
+      this._Fdef[f] = 'rgb(' + (clamp(c[0] * rm * SP[f] * FL[f][0], 0, 255) | 0) + ',' +
+        (clamp(c[1] * gm * SP[f] * FL[f][1], 0, 255) | 0) + ',' +
+        (clamp(c[2] * bm * SP[f] * FL[f][2], 0, 255) | 0) + ')';
     }
   };
 
@@ -338,24 +467,53 @@ window.MM = window.MM || {};
 
   /* ---------- visible-tile collection -------------------------------- */
 
-  Renderer.prototype._collect = function (s) {
+  /* Which tiles can paint into a rect. Defaults to the whole target, but a
+     partial repaint passes its own, and then only the tiles that can reach
+     into it get collected - so every pass below is limited for free.
+
+     A tile paints well outside its own diamond, in two directions, and both
+     have to be allowed for or a patch shows a seam:
+       up-screen   a tower stands hMax px out of its tile, so tiles BELOW the
+                   rect can paint into it;
+       down-right  a shadow is thrown that way, so tiles ABOVE and LEFT of the
+                   rect can paint into it too.                               */
+  Renderer.prototype._collect = function (s, R) {
     var g = s.grid, sc = this.scale, fx = HW * sc, fy = HH * sc;
     var hMax = 220 * sc;
-    var aMin = (-this.ox) / fx - 1.4;
-    var aMax = (this.w - this.ox) / fx + 1.4;
-    var dMin = Math.max(0, Math.floor((-this.oy) / fy - 1.5));
-    var dMax = Math.min(2 * G - 2, Math.ceil((this.h + hMax - this.oy) / fy + 1.5));
+    var rx0 = R ? R.x0 : 0, y0 = R ? R.y0 : 0;
+    var rx1 = R ? R.x1 : this.w, y1 = R ? R.y1 : this.h;
+    // how far a shadow travels down and to the right of whatever casts it
+    var shX = hMax * CAST.len * CAST.x, shY = hMax * CAST.len * CAST.y;
+    var aMin = (rx0 - shX - this.ox) / fx - 1.4;
+    var aMax = (rx1 - this.ox) / fx + 1.4;
+    var dMin = Math.max(0, Math.floor((y0 - shY - this.oy) / fy - 1.5));
+    var dMax = Math.min(2 * G - 2, Math.ceil((y1 + hMax - this.oy) / fy + 1.5));
 
     var nLot = 0, nWat = 0, nA = 0, nB = 0, nR = 0, nBld = 0, nAll = 0;
     var bLot = this._bLot, bWat = this._bWat, bA = this._bPadA, bB = this._bPadB;
     var bR = this._bRoad, bBld = this._bBld, bAll = this._bAll;
 
+    // For a partial repaint, test each candidate against its own height
+    // rather than the tallest building in the game. That is the difference
+    // between a five-tile edit collecting four hundred tiles and forty.
+    var top = R ? this._top : null;
+    var ox = this.ox, oy = this.oy, lxr = CAST.len * CAST.x, lyr = CAST.len * CAST.y;
+
     for (var d = dMin; d <= dMax; d++) {
       var x0 = Math.max(0, d - G + 1, Math.ceil((aMin + d) * 0.5));
       var x1 = Math.min(G - 1, d, Math.floor((aMax + d) * 0.5));
+      var cy = d * fy + oy;
       for (var x = x0; x <= x1; x++) {
         var y = d - x;
         var i = y * G + x;
+        if (top) {
+          // what this tile actually paints: its diamond, whatever stands on
+          // it (up-screen) and the shadow that throws (down and right)
+          var hh = top[i] * sc;
+          if (cy - hh > y1 || cy + fy + hh * lyr < y0) continue;
+          var cx = (x - y) * fx + ox;
+          if (cx - fx * 3 > rx1 || cx + fx + hh * lxr < rx0) continue;
+        }
         var t = g[i];
         bAll[nAll++] = i;
         if (t === T.EMPTY) bLot[nLot++] = i;
@@ -417,6 +575,21 @@ window.MM = window.MM || {};
           o.mask = p === 1 || p === 2 ? this._mask(s, x, y) : 0;
           try { fn(ctx, o); } catch (e) { /* one bad tile must not kill the frame */ }
         }
+      }
+    }
+
+    // Every lot paints its own share of the ground - lawn, forecourt, plaza -
+    // and the whole ground plane has to be down before _shadows runs, or each
+    // lot would paint over the shadow falling across it. lots.js splits those
+    // flat pads out into this phase and skips them when it draws the buildings.
+    if (MM.lots && MM.lots.ground && this._nBld) {
+      var go = { s: s, x: 0, y: 0, cx: 0, cy: 0, fx: fx, fy: fy, scale: sc };
+      for (k = 0; k < this._nBld; k++) {
+        i = this._bBld[k]; x = i % G; y = (i / G) | 0;
+        if (MM.lots.role(s, x, y) !== 1) continue;
+        go.x = x; go.y = y;
+        go.cx = (x - y) * fx + ox; go.cy = (x + y) * fy + oy;
+        try { MM.lots.ground(ctx, go); } catch (e) {}
       }
     }
 
@@ -678,64 +851,215 @@ window.MM = window.MM || {};
     ctx.restore();
   };
 
-  /* ---------- shadows ------------------------------------------------- */
+  /* ---------- ground grain ---------------------------------------------
+     A lawn painted as one flat fill reads as paper, and a lot's own pads
+     cover whatever texture ground.js laid under them. One soft blob per
+     tile - light or dark, placed and sized off the tile hash so it never
+     moves - breaks the fill up without adding a colour to the palette.
+     Two paths, two fills, whatever the size of the city.
 
-  Renderer.prototype._shadows = function (s) {
-    var alpha = 0.30;
-    if (!this._nBld) return;
-    var ctx = this.ctx, C = this._C, sc = this.scale;
-    var fx = HW * sc, fy = HH * sc, ox = this.ox, oy = this.oy;
-    // The cached city is lit for noon, so its shadows are cast for noon too:
-    // a long dawn shadow baked under a midday facade reads as a bug.
-    var sun = -0.34, stretch = 0.42;
+     `source-atop` for the same reason the shadows use it: the grain belongs
+     on ground that is already painted, not on the open sky past the shore. */
 
-    var LT = MM.lots;
+  Renderer.prototype._dapple = function (s) {
+    var sc = this.scale;
+    if (sc < 0.5 || !this._nAll) return;
+    var ctx = this.ctx, fx = HW * sc, fy = HH * sc, ox = this.ox, oy = this.oy;
+    var n = this._nAll, buf = this._bAll, pass, k, i, x, y, a, b, r;
     ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = C.shade;
-    ctx.beginPath();
-    for (var k = 0; k < this._nBld; k++) {
-      var i = this._bBld[k], x = i % G, y = (i / G) | 0;
-      var h, cx, cy, ax, ay;
+    ctx.globalCompositeOperation = 'source-atop';
+    for (pass = 0; pass < 2; pass++) {
+      ctx.fillStyle = pass ? 'rgba(255,250,226,0.055)' : 'rgba(18,26,44,0.055)';
+      ctx.beginPath();
+      for (k = 0; k < n; k++) {
+        i = buf[k]; x = i % G; y = (i / G) | 0;
+        if ((hash2(x + pass * 97, y + pass * 31) < 0.42)) continue;
+        a = (hash2(x + 11, y + pass * 7) - 0.5) * 1.1;
+        b = (hash2(x + pass * 53, y + 19) - 0.5) * 1.1;
+        r = 0.30 + hash2(x + 3, y + pass * 23) * 0.34;
+        ctx.moveTo((a - b + r) * fx + (x - y) * fx + ox, (a + b) * fy + (x + y) * fy + oy);
+        ctx.ellipse((a - b) * fx + (x - y) * fx + ox, (a + b) * fy + (x + y) * fy + oy,
+          r * fx, r * fy * 1.15, 0, 0, TAU);
+      }
+      ctx.fill();
+    }
+    ctx.restore();
+  };
 
-      // A block-scale building casts one shadow the size of its whole lot,
-      // not nine tile-sized ones. lots.js knows the footprint and roughly how
-      // tall the thing on it ends up.
+  /* ---------- shadows -------------------------------------------------
+     A cast shadow is the footprint swept along the sun's ground direction -
+     the convex hull of the footprint and the same footprint pushed out by
+     the building's height. Everything writes into one offscreen layer at
+     full opacity, so overlapping shadows union instead of stacking into
+     black blotches, and the layer is blitted back through a blur: soft
+     edges everywhere for the price of one filtered drawImage.
+
+     `source-atop` keeps the result on ground that is already painted and
+     off the open sky, which is what makes a shadow near the map edge stop
+     at the shoreline instead of hanging in the air.
+
+     The cached city is lit for noon, so its shadows are cast for noon too:
+     a long dawn shadow baked under a midday facade reads as a bug. The sun
+     sits screen-upper-left (see gfx.setSun), so shadows fall down and to
+     the right, towards the camera, where they can actually be seen.        */
+
+  var CAST = (MM.gfx && MM.gfx.CAST) ||
+    { x: 0.75, y: 0.66, len: 0.62, tint: 'rgb(38,46,74)', cast: 0.34, foot: 0.34 };
+
+  /* Convex hull of a footprint and its offset copy, as one subpath.
+     Andrew's monotone chain over the 8 corners - shared scratch, no
+     allocation, and it stays correct if the sun direction ever moves. */
+  var _hx = new Float64Array(8), _hy = new Float64Array(8);
+  var _hi = new Int32Array(8), _hs = new Int32Array(20);
+
+  function sweptPath (ctx, n, dx, dy) {
+    var m = n * 2, i, j, v, t, k = 0, lower;
+    for (i = 0; i < n; i++) { _hx[n + i] = _hx[i] + dx; _hy[n + i] = _hy[i] + dy; }
+    for (i = 0; i < m; i++) _hi[i] = i;
+    for (i = 1; i < m; i++) {                    // sort by x, then y
+      v = _hi[i]; j = i - 1;
+      while (j >= 0 && (_hx[_hi[j]] > _hx[v] ||
+        (_hx[_hi[j]] === _hx[v] && _hy[_hi[j]] > _hy[v]))) { _hi[j + 1] = _hi[j]; j--; }
+      _hi[j + 1] = v;
+    }
+    for (i = 0; i < m; i++) {                    // lower chain
+      t = _hi[i];
+      while (k >= 2 && cross3(_hs[k - 2], _hs[k - 1], t) <= 0) k--;
+      _hs[k++] = t;
+    }
+    lower = k + 1;
+    for (i = m - 2; i >= 0; i--) {               // upper chain
+      t = _hi[i];
+      while (k >= lower && cross3(_hs[k - 2], _hs[k - 1], t) <= 0) k--;
+      _hs[k++] = t;
+    }
+    k--;                                          // the chain closes on itself
+    ctx.moveTo(_hx[_hs[0]], _hy[_hs[0]]);
+    for (i = 1; i < k; i++) ctx.lineTo(_hx[_hs[i]], _hy[_hs[i]]);
+    ctx.closePath();
+  }
+
+  function cross3 (a, b, c) {
+    return (_hx[b] - _hx[a]) * (_hy[c] - _hy[a]) - (_hy[b] - _hy[a]) * (_hx[c] - _hx[a]);
+  }
+
+  /* the four screen corners of a tile-space rectangle, into the hull scratch */
+  function footprint (a, b, c, d, fx, fy, ox, oy) {
+    _hx[0] = (a - b) * fx + ox; _hy[0] = (a + b) * fy + oy;
+    _hx[1] = (c - b) * fx + ox; _hy[1] = (c + b) * fy + oy;
+    _hx[2] = (c - d) * fx + ox; _hy[2] = (c + d) * fy + oy;
+    _hx[3] = (a - d) * fx + ox; _hy[3] = (a + d) * fy + oy;
+  }
+
+  /* Walk every caster once, handing each one's footprint and height to fn.
+     Both shadow passes need the same list, and role() is not free. */
+  Renderer.prototype._casters = function (s, fn) {
+    var sc = this.scale, fx = HW * sc, fy = HH * sc, ox = this.ox, oy = this.oy;
+    var LT = MM.lots, n = this._nBld, k, i, x, y, h, lot, role, t, sh, f;
+    for (k = 0; k < n; k++) {
+      i = this._bBld[k]; x = i % G; y = (i / G) | 0;
       if (LT) {
-        var role = LT.role(s, x, y);
-        if (role === -1) continue;              // its anchor draws the shadow
+        role = LT.role(s, x, y);
+        if (role === -1) continue;               // its anchor casts for it
         if (role === 1) {
-          var lot = LT.shape(s, x, y);
-          if (!lot || lot.top < 6) continue;
+          // A block-scale building casts one shadow the size of its whole
+          // lot, not nine tile-sized ones. lots.js knows the footprint and
+          // roughly how tall the thing on it ends up.
+          lot = LT.shape(s, x, y);
+          if (!lot) continue;
           h = lot.top * sc;
-          var m = 0.30;                         // lots leave a setback; so does the shadow
-          var ta = lot.x0 - 0.5 + m, tb = lot.y0 - 0.5 + m;
-          var tc = lot.x1 + 0.5 - m, td = lot.y1 + 0.5 - m;
-          var sx = sun * h * stretch * 0.9 + ox, sy = h * stretch * 0.34 + oy;
-          ctx.moveTo((ta - tb) * fx + sx, (ta + tb) * fy + sy);
-          ctx.lineTo((tc - tb) * fx + sx, (tc + tb) * fy + sy);
-          ctx.lineTo((tc - td) * fx + sx, (tc + td) * fy + sy);
-          ctx.lineTo((ta - td) * fx + sx, (ta + td) * fy + sy);
-          ctx.closePath();
+          if (h < 2) continue;                   // a lawn casts nothing
+          footprint(lot.x0 - 0.5 + 0.24, lot.y0 - 0.5 + 0.24,
+            lot.x1 + 0.5 - 0.24, lot.y1 + 0.5 - 0.24, fx, fy, ox, oy);
+          fn(h);
           continue;
         }
       }
-
-      var t = s.grid[i];
-      var sh = SHAPE[t] || SHAPE_DEF;
+      t = s.grid[i];
+      sh = SHAPE[t] || SHAPE_DEF;
       h = (sh[0] + sh[1] * (s.level[i] || 0)) * UNIT * sc;
-      if (h < 1) continue;
-      var f = sh[2];
-      cx = (x - y) * fx + ox + sun * h * stretch * 0.9;
-      cy = (x + y) * fy + oy + h * stretch * 0.34;
-      ax = fx * f * 1.06; ay = fy * f * 1.06;
-      ctx.moveTo(cx, cy - ay);
-      ctx.lineTo(cx + ax, cy);
-      ctx.lineTo(cx, cy + ay);
-      ctx.lineTo(cx - ax, cy);
-      ctx.closePath();
+      if (h < 2) continue;
+      f = sh[2] * 0.5;
+      footprint(x - f, y - f, x + f, y + f, fx, fy, ox, oy);
+      fn(h);
     }
-    ctx.fill();
+  };
+
+  /* the cast silhouettes on their own, for tools/shlayer.js */
+  Renderer.prototype._shadowPaths = function (g, s, cast) {
+    var lx = CAST.len * CAST.x, ly = CAST.len * CAST.y;
+    this._casters(s, function (h) { sweptPath(g, 4, cast ? h * lx : 0, cast ? h * ly : 0); });
+  };
+
+  /* The layer is built at half resolution and blown back up on the blit.
+     A blur costs a pass over every pixel, and at full size the two of them
+     were the most expensive thing in a rebuild by a wide margin - a quarter
+     of the pixels is a quarter of the cost, and the upscale softens the
+     edges the blur was there to soften anyway. */
+  var SH_RES = 0.5;
+
+  Renderer.prototype._shadows = function (s) {
+    if (!this._nBld) return;
+    var sc = this.scale;
+    if (sc < 0.26) return;                       // finer than the blur can carry
+    var ctx = this.ctx, W = this.w, H = this.h;
+    var dpr = Math.min(this.dpr || 1, 2) * SH_RES;
+    var cw = Math.max(1, Math.round(W * dpr)), chh = Math.max(1, Math.round(H * dpr));
+    var shc = this._shc;
+    if (shc.width !== cw || shc.height !== chh) { shc.width = cw; shc.height = chh; this._shctx = null; }
+    if (!this._shctx) this._shctx = shc.getContext('2d');
+    var g = this._shctx;
+
+    // A partial repaint only needs the shadows inside its own rect. Clearing
+    // and blitting the whole layer for a one-tile edit was most of what a
+    // patch cost - the layer is as big as the cache, and the blit carries a
+    // blur.
+    var R = this._clipR;
+    var rx = R ? R.x0 : 0, ry = R ? R.y0 : 0;
+    var rw = R ? R.x1 - R.x0 : W, rh = R ? R.y1 - R.y0 : H;
+
+    var lx = CAST.len * CAST.x, ly = CAST.len * CAST.y;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(rx, ry, rw, rh);
+
+    // Two darkness levels, no stacking, and no composite mode.
+    //
+    // Within a single fill() overlapping subpaths union rather than pile up,
+    // which is what stops a street of shadows turning into black blotches.
+    // Getting the same between the two levels wants the seam to sit over the
+    // throw, which this used to buy with `destination-over` on the seam pass.
+    //
+    // It buys it by drawing the throws first instead. The two are identical -
+    // destination-over(seam, throw) and source-over(throw, seam) are the same
+    // Porter-Duff term - but `destination-over` has to read the destination,
+    // and on a canvas this size Chromium answers that by copying the whole
+    // surface. It was 113ms of a 158ms repaint, on every tile placed.
+    //
+    // The contact seam is the tight one - a building without it reads as a
+    // decal on the lawn - and the blur then blends the two into a falloff.
+    g.fillStyle = CAST.tint;
+    g.beginPath();
+    this._casters(s, function (h) { sweptPath(g, 4, h * lx, h * ly); });
+    g.fill();
+
+    g.fillStyle = CAST.foot;
+    g.beginPath();
+    this._casters(s, function (h) {
+      var r = h * 0.10; if (r > 5 * sc) r = 5 * sc;
+      sweptPath(g, 4, r * CAST.x, r * CAST.y);
+    });
+    g.fill();
+
+    // The blur rides out on the blit. It was worth building a second layer to
+    // blur into at one point, back when this pass also carried a
+    // `destination-over` that forced a whole-surface copy; with that gone the
+    // sibling canvas bought a couple of milliseconds and cost ten megabytes
+    // of canvas, which is the wrong way round - see LIGHT_RES on why total
+    // canvas memory is the thing that decides whether any of this is fast.
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-atop';
+    ctx.filter = 'blur(' + Math.max(0.7, 1.25 * sc).toFixed(2) + 'px)';
+    ctx.drawImage(shc, rx * dpr, ry * dpr, rw * dpr, rh * dpr, rx, ry, rw, rh);
     ctx.restore();
   };
 
@@ -1323,10 +1647,19 @@ window.MM = window.MM || {};
     // neighbouring tiles into lots and draws each as one designed complex.
     // Civic buildings are still one tile, one model, and fall through below.
     var LT = MM.lots, lo = LT ? { s: s, x: 0, y: 0, cx: 0, cy: 0, fx: fx, fy: fy, scale: sc } : null;
+    // Bridges are elevated over water, so they have to paint between what is
+    // behind them and what is in front. This sweep already orders by diagonal
+    // for traffic; riding along with it gets that ordering for nothing.
+    var BR = MM.bridges, bo = null;
+    if (BR) { try { BR.plan(s); } catch (e) { BR = null; } }
+    if (BR) bo = { ox: ox, oy: oy, fx: fx, fy: fy, scale: sc };
 
     for (k = 0; k < n; k++) {
       var i = this._bBld[k], x = i % G, y = (i / G) | 0, d = x + y;
-      while (vd <= d) { this._drawVehDiag(vd); vd++; }
+      while (vd <= d) {
+        if (bo) { try { BR.drawDiag(ctx, bo, vd); } catch (e) {} }
+        this._drawVehDiag(vd); vd++;
+      }
 
       if (LT) {
         var lr = LT.role(s, x, y);
@@ -1350,7 +1683,10 @@ window.MM = window.MM || {};
       this._structure(s, x, y, i);
       if (o && P.fringe) { try { P.fringe(ctx, o); } catch (e) {} }
     }
-    while (vd < 2 * G) { this._drawVehDiag(vd); vd++; }
+    while (vd < 2 * G) {
+      if (bo) { try { BR.drawDiag(ctx, bo, vd); } catch (e) {} }
+      this._drawVehDiag(vd); vd++;
+    }
   };
 
   /* ---------- hover / selection -------------------------------------- */
@@ -1434,6 +1770,10 @@ window.MM = window.MM || {};
     for (k = 0; k < n; k++) {
       var lot = L[k], sh = LT.shape(s, lot.x1, lot.y1);
       if (!sh || sh.top < 18) continue;      // parks and yards have no windows
+      // A landmark is a lattice, not a building: landmarks.js lights its own
+      // beacon, and a window grid across its lot painted a bright column of
+      // glazing straight through the open steelwork.
+      if (sh.arch === 'hero') continue;
       a[w] = lot.x1; a[w + 1] = lot.y1; a[w + 2] = lot.w; a[w + 3] = lot.h; a[w + 4] = sh.top;
       w += 5;
     }
@@ -1451,7 +1791,10 @@ window.MM = window.MM || {};
     if (!this._litN) return;
 
     var ctx = this.ctx, sc = this.scale, fx = HW * sc, fy = HH * sc;
-    var ox = this.ox, oy = this.oy, a = this._lit, W = this.w, H = this.h;
+    var ox = this.ox, oy = this.oy, a = this._lit;
+    var CR = this._clipR;
+    var X0 = CR ? CR.x0 : 0, Y0 = CR ? CR.y0 : 0;
+    var W = CR ? CR.x1 : this.w, H = CR ? CR.y1 : this.h;
     var Gg = MM.gfx, k, c, r;
     ctx.save();
     ctx.beginPath();
@@ -1459,10 +1802,12 @@ window.MM = window.MM || {};
       var x = a[k], y = a[k + 1], lw = a[k + 2], lh = a[k + 3], top = a[k + 4] * sc;
       var cx = (x - y) * fx + ox, cy = (x + y) * fy + oy;
       // a lot is at most three tiles deep, so this box comfortably contains it
-      if (cx < -4 * fx - lw * fx || cx > W + 4 * fx + lh * fx) continue;
-      if (cy - top < -4 * fy || cy > H + 4 * fy) continue;
+      if (cx < X0 - 4 * fx - lw * fx || cx > W + 4 * fx + lh * fx) continue;
+      if (cy - top < Y0 - 4 * fy || cy > H + 4 * fy) continue;
       var u0 = -2 * (lw - 1) - 1, v0 = -2 * (lh - 1) - 1;
-      var rows = clamp(Math.round(top / (22 * sc)), 1, 9);
+      // Supertalls are ~220px at scale 1; a 9-row cap spread over that height
+      // made the windows read as storey-high slabs.
+      var rows = clamp(Math.round(top / (22 * sc)), 1, 18);
       var h0 = top * 0.12, h1 = top * 0.94;
       var dh = (h1 - h0) / rows;
       var colsL = clamp(Math.round(lw * 2.6), 2, 9), du = (1 - u0) / colsL;
@@ -1502,20 +1847,364 @@ window.MM = window.MM || {};
       lit[nl++] = px; lit[nl++] = py;
     }
     if (!nl) return;
+
+    // Three concentric additive fills over every lamp on screen cost 3.0ms a
+    // frame - one pass per ring, each one a fresh path of arcs. The rings
+    // never change shape, only their size with the zoom, so bake the three of
+    // them into one small sprite and stamp it. Same image, one draw per lamp
+    // of a 2*rmax-square instead of three full passes of arcs.
     var head = 13 * sc;
+    var spr = this._lampS(head);
+    var r0 = spr.r;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    for (var q = 0; q < 3; q++) {
-      var rr = head * RING_R[q];
-      ctx.fillStyle = 'rgba(' + HOT.lamp + ',' + (RING_A[q] * glow).toFixed(3) + ')';
-      ctx.beginPath();
-      for (k = 0; k < nl; k += 2) {
-        ctx.moveTo(lit[k] + rr, lit[k + 1] - head);
-        ctx.arc(lit[k], lit[k + 1] - head, rr, 0, TAU);
-      }
-      ctx.fill();
-    }
+    ctx.globalAlpha = glow;
+    for (k = 0; k < nl; k += 2) ctx.drawImage(spr.c, lit[k] - r0, lit[k + 1] - head - r0, r0 * 2, r0 * 2);
     ctx.restore();
+  };
+
+  /* The lamp halo as a sprite: the same three rings, drawn once. Rebuilt only
+     when the zoom changes it, and rounded so a slow zoom does not thrash. */
+  Renderer.prototype._lampS = function (head) {
+    var r = Math.max(2, Math.ceil(head * RING_R[0]));
+    var key = r + '|' + HOT.lamp;
+    if (key === this._lampKey && this._lampSprite) return this._lampSprite;
+    var c = document.createElement('canvas');
+    var n = Math.min(256, r * 2);            // the halo is soft; 256px is plenty
+    c.width = n; c.height = n;
+    var g = c.getContext('2d');
+    var k = n / (r * 2);
+    g.setTransform(k, 0, 0, k, 0, 0);
+    // the rings stacked additively on the live canvas, so they have to stack
+    // additively in here too or the sprite is not the same image
+    g.globalCompositeOperation = 'lighter';
+    for (var q = 0; q < 3; q++) {
+      g.fillStyle = 'rgba(' + HOT.lamp + ',' + RING_A[q].toFixed(3) + ')';
+      g.beginPath();
+      g.arc(r, r, head * RING_R[q], 0, TAU);
+      g.fill();
+    }
+    this._lampKey = key;
+    this._lampSprite = { c: c, r: r };
+    return this._lampSprite;
+  };
+
+  /* ---------- what changed --------------------------------------------
+     A cache rebuild is most of a second on a built city, and the cache is
+     invalidated by every player edit AND by every block that levels up on its
+     own (sim.js bumps s.rev for both). Rebuilding the world because one lot
+     grew a storey is what made building feel like wading.
+
+     So: work out exactly which tiles look different, and repaint only those.
+     A per-tile signature covers everything the static pass draws there - the
+     tile, its level, the four neighbours a road links itself to, and the
+     identity of the lot covering it, because a block is drawn as a lot rather
+     than a tile and a single edit can regroup its neighbours. Diffing two
+     signatures gives the exact set, with no reasoning about how far a change
+     might have reached.                                                     */
+
+  function hashStr (str) {
+    var h = 2166136261, i;
+    if (!str) return h >>> 0;
+    for (i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+
+  Renderer.prototype._sig = function (s) {
+    var N = G * G, look = this._look;
+    if (!look || look.length !== N) look = this._look = new Uint32Array(N);
+    // How tall the thing on each tile is drawn, in px at scale 1. Used to
+    // work out which tiles can reach into a repainted rect: without it every
+    // patch has to assume the tallest tower in the game stands on every tile,
+    // and a five-tile edit collects four hundred of them.
+    var top = this._top;
+    if (!top || top.length !== N) top = this._top = new Float32Array(N);
+    var g = s.grid, lv = s.level, i, x, y;
+    for (y = 0; y < G; y++) {
+      for (x = 0; x < G; x++) {
+        i = y * G + x;
+        var sh = SHAPE[g[i]] || SHAPE_DEF;
+        top[i] = (sh[0] + sh[1] * (lv[i] || 0)) * UNIT;
+        var v = (g[i] & 31) | (((lv[i] || 0) & 7) << 5);
+        if (x > 0)     v |= (g[i - 1] & 31) << 8;
+        if (x < G - 1) v |= (g[i + 1] & 31) << 13;
+        if (y > 0)     v |= (g[i - G] & 31) << 18;
+        if (y < G - 1) v |= (g[i + G] & 31) << 23;
+        look[i] = v;
+      }
+    }
+    var LT = MM.lots;
+    if (LT && LT.plan) {
+      try { LT.plan(s); } catch (e) { return look; }
+      var L = LT.lots || [], k, o, h;
+      for (k = 0; k < L.length; k++) {
+        o = L[k];
+        h = Math.imul(o.x0 + 1, 374761393) ^ Math.imul(o.y0 + 1, 668265263) ^
+            Math.imul(o.w * 8 + o.h, 2246822519) ^ Math.imul((o.kind | 0) + 1, 3266489917) ^
+            Math.imul((o.lv | 0) + 1, 40503) ^ hashStr(o.arch) ^
+            // dt is normalised against the densest lot in the city, so ANY
+            // level-up nudges it everywhere. Bucket it coarsely or one block
+            // growing a storey dirties every lot on the map and the patch
+            // turns back into a full rebuild.
+            Math.imul(((o.dt || 0) * 12) | 0, 6151) ^ Math.imul((o.road | 0) + 1, 2654435761);
+        var lotTop = 0;
+        if (LT.shape) {
+          try { var sp = LT.shape(s, o.x1, o.y1); if (sp && sp.top) lotTop = sp.top; } catch (e) {}
+        }
+        for (y = o.y0; y <= o.y1; y++)
+          for (x = o.x0; x <= o.x1; x++) {
+            look[y * G + x] ^= h;
+            if (lotTop > top[y * G + x]) top[y * G + x] = lotTop;
+          }
+      }
+    }
+    return look;
+  };
+
+  /* The tile bounding box of everything whose picture changed since the bake.
+     null = nothing changed at all, which is the common case for a rev bump
+     that only moved a number the cache never drew. */
+  Renderer.prototype._dirty = function (s) {
+    var N = G * G, look = this._sig(s), prev = this._lookPrev;
+    if (!prev || prev.length !== N) return { all: true };
+    var x0 = G, y0 = G, x1 = -1, y1 = -1, n = 0, i, x, y;
+    for (i = 0; i < N; i++) {
+      if (look[i] === prev[i]) continue;
+      n++;
+      x = i % G; y = (i / G) | 0;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+    if (!n) return null;
+    return { x0: x0, y0: y0, x1: x1, y1: y1, n: n };
+  };
+
+  Renderer.prototype._commitSig = function (s) {
+    var look = this._sig(s), N = look.length;
+    if (!this._lookPrev || this._lookPrev.length !== N) this._lookPrev = new Uint32Array(N);
+    this._lookPrev.set(look);
+  };
+
+  /* Repaint just the dirty tiles' corner of the cache. Returns false if the
+     region is big enough that a straight rebuild is the cheaper answer. */
+  Renderer.prototype._patchStatic = function (s, d) {
+    if (!this._cctx || !this._cacheW) return false;
+    var sc = this.scale, fx = HW * sc, fy = HH * sc;
+    var ox = this._cacheOx + this._cacheMx, oy = this._cacheOy + this._cacheMy;
+    // one tile of slack, then the diamond corners of the dirty tile box
+    var a0 = d.x0 - 1, a1 = d.x1 + 1, b0 = d.y0 - 1, b1 = d.y1 + 1;
+    if (a0 < 0) a0 = 0;
+    if (b0 < 0) b0 = 0;
+    if (a1 > G - 1) a1 = G - 1;
+    if (b1 > G - 1) b1 = G - 1;
+    // The rect has to contain every pixel these tiles paint, which means the
+    // height of what stands on them - their own height, not the tallest tower
+    // in the game. A low-rise block changing needs a tenth of the headroom a
+    // supertall does, and the rect is what sets how much gets repainted.
+    var hMax = 0, top = this._top, ty, tx;
+    if (top) {
+      for (ty = b0; ty <= b1; ty++)
+        for (tx = a0; tx <= a1; tx++) { var tv = top[ty * G + tx]; if (tv > hMax) hMax = tv; }
+    } else hMax = 220;
+    hMax *= sc;
+    var R = {
+      x0: (a0 - b1) * fx + ox - fx,
+      x1: (a1 - b0) * fx + ox + fx + hMax * CAST.len * CAST.x,
+      y0: (a0 + b0) * fy + oy - fy - hMax,
+      y1: (a1 + b1) * fy + oy + fy + hMax * CAST.len * CAST.y
+    };
+    if (R.x0 < 0) R.x0 = 0;
+    if (R.y0 < 0) R.y0 = 0;
+    if (R.x1 > this._cacheW) R.x1 = this._cacheW;
+    if (R.y1 > this._cacheH) R.y1 = this._cacheH;
+    if (R.x1 <= R.x0 || R.y1 <= R.y0) return true;      // off-cache: nothing to do
+    // Only hand back to a full rebuild when the patch has grown to most of
+    // the cache anyway. A whole-city rebuild is three quarters of a second,
+    // so the clip is worth keeping well past the point where it looks marginal.
+    if ((R.x1 - R.x0) * (R.y1 - R.y0) > this._cacheW * this._cacheH * 0.62) return false;
+    this._paintCity(s, R);
+    return true;
+  };
+
+  /* ---------- how much city to cache ------------------------------------
+     The static cache used to be the viewport plus a fixed 192px margin, and
+     a pan that walked past that margin rebuilt the whole thing. On a built-up
+     city a rebuild is 340-750ms of vector drawing - so dragging the map threw
+     a third of a second of freeze every 184 pixels, which is exactly what
+     "it takes forever to move across the city" feels like.
+
+     The fix is to stop treating the cache as a window onto an unbounded
+     world. The grid is 48x48 and nothing else exists: at ordinary zooms the
+     whole city is only about 3000x1800 css px, so cache all of it and a pan
+     costs one blit and no rebuild, ever. Zoomed right in that would be a
+     quarter of a gigabyte of canvas, so the margin is grown only as far as a
+     device-pixel budget allows and falls back to something near the old
+     behaviour at the far end of the zoom - where far fewer tiles are on
+     screen and a rebuild is correspondingly cheaper anyway.
+
+     Returns the rect to cache in screen coordinates relative to the current
+     camera; `mx`/`my` are how far it reaches left of and above the viewport. */
+
+  /* The city's own screen extent, in camera-independent units (screen minus
+     camera origin). Tile (x,y) sits at ((x-y)fx, (x+y)fy), so x-y spans
+     +/-(G-1) and x+y spans 0..2G-2; the margins are for the tallest tower
+     standing up out of its tile and for the shadows running off the last row. */
+  Renderer.prototype._cityBox = function () {
+    var sc = this.scale, fx = HW * sc, fy = HH * sc;
+    return {
+      l: -(G - 1) * fx - fx, r: (G - 1) * fx + fx,
+      // headroom for the tallest tower standing out of its tile, and for the
+      // shadows the last row throws past the edge of the grid
+      t: -fy - 260 * sc, b: (2 * G - 2) * fy + fy + 150 * sc
+    };
+  };
+
+  Renderer.prototype._cacheRect = function () {
+    var box = this._cityBox(), w = this.w, h = this.h;
+    var ox = this.ox, oy = this.oy;
+    var dpr = Math.min(this.dpr || 1, 2);
+
+    // screen-space city bounds for the camera we are about to bake at
+    var cl = box.l + ox, cr = box.r + ox, ct = box.t + oy, cb = box.b + oy;
+
+    function span (lo, hi, a, b) {          // [a,b] clipped into [lo,hi]
+      var x0 = a > lo ? a : lo, x1 = b < hi ? b : hi;
+      return x1 > x0 ? { a: x0, b: x1 } : { a: x0, b: x0 };
+    }
+    function rectFor (m) {
+      var X = span(-m, w + m, cl, cr), Y = span(-m, h + m, ct, cb);
+      return { L: X.a, R: X.b, T: Y.a, B: Y.b };
+    }
+    function area (r) { return (r.R - r.L) * (r.B - r.T); }
+
+    // Two outcomes only, and the middle ground is deliberately not one of
+    // them. Either the whole city fits - in which case a pan never rebuilds
+    // anything, which is the whole prize - or it does not, and then the
+    // margin stays small. Spending a big budget on a margin that merely
+    // delays the next rebuild is the worst of both: the rebuild still comes,
+    // and it is far more expensive because the cache is huge.
+    var huge = 2 * (w + h) + 4 * Math.max(box.r - box.l, box.b - box.t);
+    var r = rectFor(huge), a = area(r), cd = dpr;
+
+    if (a * dpr * dpr > CACHE_PX) {
+      // Nearly affordable? Buy the whole city by softening the cache instead.
+      var soft = Math.sqrt(CACHE_PX / Math.max(1, a));
+      if (soft >= CACHE_DPR_MIN) {
+        cd = Math.min(dpr, soft);
+      } else {
+        // Zoomed in past the point where the city fits. Keep every device
+        // pixel and buy the largest margin the budget allows: a rebuild is
+        // fill-bound and so costs about the same whatever is in it, which
+        // makes the number of rebuilds the only thing worth optimising, and
+        // the margin is what a zoom-out burst eats through before the cache
+        // stops covering the screen. Area grows monotonically with the margin
+        // and saturates once the city is inside, so bisect for it.
+        var lo = CACHE_M, hi = huge;
+        for (var i = 0; i < 26; i++) {
+          var mid = (lo + hi) * 0.5;
+          if (area(rectFor(mid)) * dpr * dpr > CACHE_PX) hi = mid; else lo = mid;
+        }
+        r = rectFor(lo);
+      }
+    }
+
+    // Where the city stops there is nothing to draw and the sky underneath is
+    // the right answer, so that edge is left exactly where it falls.
+    if (r.R - r.L < 1 || r.B - r.T < 1) return { mx: 0, my: 0, W: 1, H: 1, dpr: cd, empty: true };
+    return { mx: -r.L, my: -r.T, W: r.R - r.L, H: r.B - r.T, dpr: cd, empty: false };
+  };
+
+  /* Does the cache still hold everything the current camera needs to show?
+     Compared in camera-independent units, so a pan inside a whole-city cache
+     is always valid however far it goes. */
+  Renderer.prototype._cacheCovers = function () {
+    var box = this._cityBox(), ox = this.ox, oy = this.oy;
+    // what the viewport needs, intersected with what actually exists
+    var nl = Math.max(box.l, -ox), nr = Math.min(box.r, this.w - ox);
+    var nt = Math.max(box.t, -oy), nb = Math.min(box.b, this.h - oy);
+    if (nr <= nl || nb <= nt) return true;              // nothing on screen
+    // What was recorded is in screen units at the scale it was baked at, and
+    // those units stretch with the zoom. Without this the coverage test is
+    // comparing two different rulers and says "no" at every zoom step, which
+    // put a 700ms rebuild in every frame of a wheel spin.
+    var k = this._cacheScale > 0 ? this.scale / this._cacheScale : 1;
+    var e = 0.5;
+    return nl >= this._covL * k - e && nr <= this._covR * k + e &&
+           nt >= this._covT * k - e && nb <= this._covB * k + e;
+  };
+
+  /* ---------- atmosphere: four gradients, baked --------------------------
+     The four washes that cover the whole viewport - the sky, the sun's haze,
+     the directional glow and the vignette - were the most expensive thing in
+     a frame by a distance. Measured on this renderer at 1426x754: a linear
+     gradient fill costs 2.0ms and a radial one 3.6ms, against 1.2ms to blit
+     the same pixels out of an offscreen. Skia evaluates a gradient per pixel
+     and blits a scanline at a time, so the gap does not close.
+
+     None of them reads the grid or the camera. They are a pure function of
+     the light and the window, which is exactly the shape of thing that wants
+     baking: paint each into an offscreen once per light bucket, then blit.
+     Baked at half resolution and blown back up, because a gradient has no
+     detail to lose and it makes the bake itself four times cheaper.
+
+     Three layers, because they need three composite operations:
+       _bgL   opaque       sky gradient + sun or moon disc   (under the city)
+       _addL  'lighter'    the sun's directional wash        (over the city)
+       _ovL   source-over  aerial haze + vignette            (over everything) */
+
+  var ATMO_K = 0.5;                        // bake resolution, linear
+
+  /* An offscreen `name` sized to the viewport times k, cleared, with the
+     transform set so callers can keep drawing in plain viewport coordinates. */
+  Renderer.prototype._layer = function (name, k) {
+    var c = this[name];
+    if (!c) c = this[name] = document.createElement('canvas');
+    var w = Math.max(1, Math.round(this.w * k)), h = Math.max(1, Math.round(this.h * k));
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; this[name + 'x'] = null; }
+    var g = this[name + 'x'];
+    if (!g) g = this[name + 'x'] = c.getContext('2d');
+    g.setTransform(k, 0, 0, k, 0, 0);
+    g.clearRect(0, 0, this.w, this.h);
+    return g;
+  };
+
+  Renderer.prototype._bakeAtmo = function () {
+    var LG = MM.light;
+    // light.js owns the key: it quantises the sun's position and the light,
+    // so a wash that moved three pixels is not a reason to repaint a million.
+    var key = (LG && LG.key ? LG.key(this) : (this.w + 'x' + this.h)) +
+      '|' + this.L.toFixed(2) + '|' + this.golden.toFixed(2) + '|' + this.N.toFixed(2);
+    if (key === this._atmoKey) return;
+    this._atmoKey = key;
+
+    var K = ATMO_K, g, grad;
+
+    // 1. background - the sky, then the disc the whole scene points at
+    g = this._layer('_bgL', K);
+    grad = g.createLinearGradient(0, 0, 0, this.h);
+    grad.addColorStop(0, rgbs(lerp3([18, 27, 52], [96, 164, 228], this.L)));
+    var bot = lerp3([34, 40, 62], [198, 226, 244], this.L);
+    bot = lerp3(bot, [236, 158, 92], this.golden * 0.7);
+    grad.addColorStop(1, rgbs(bot));
+    g.fillStyle = grad;
+    g.fillRect(0, 0, this.w, this.h);
+    if (LG && LG.sky) LG.sky(g, this);
+
+    // 2. additive - through the middle of the night there is nothing in it,
+    //    and an empty layer is a blit worth skipping entirely
+    this._addOn = !!(LG && LG.glow) && (!LG.glowAlpha || LG.glowAlpha() >= 0.015);
+    if (this._addOn) { g = this._layer('_addL', K); LG.glow(g, this); }
+
+    // 3. over - aerial perspective, then the vignette on top of it
+    g = this._layer('_ovL', K);
+    if (LG && LG.haze) LG.haze(g, this);
+    g.save();
+    g.globalAlpha = 0.55 + 0.35 * this.N;
+    g.fillStyle = this._buildVignette(g);
+    g.fillRect(0, 0, this.w, this.h);
+    g.restore();
   };
 
   /* ---------- frame --------------------------------------------------- */
@@ -1523,54 +2212,123 @@ window.MM = window.MM || {};
   /* Draw the unchanging city into the offscreen cache. Everything that moves -
      traffic, steam, the hover cursor - is drawn live on top of the blit. */
   Renderer.prototype._renderStatic = function (s) {
-    var M = CACHE_M, dpr = Math.min(this.dpr || 1, 2);
-    var W = this.w + 2 * M, H = this.h + 2 * M;
+    var rect = this._cacheRect();
+    var dpr = rect.dpr;
+    var mx = rect.mx, my = rect.my, W = rect.W, H = rect.H;
     var cc = this._cc;
     var cw = Math.max(1, Math.round(W * dpr)), ch = Math.max(1, Math.round(H * dpr));
     if (cc.width !== cw || cc.height !== ch) { cc.width = cw; cc.height = ch; this._cctx = null; }
     if (!this._cctx) this._cctx = cc.getContext('2d');
     var lc = this._lc;
-    if (lc.width !== cw || lc.height !== ch) { lc.width = cw; lc.height = ch; this._lctx = null; }
+    var lw = Math.max(1, Math.round(cw * LIGHT_RES)), lh = Math.max(1, Math.round(ch * LIGHT_RES));
+    if (lc.width !== lw || lc.height !== lh) { lc.width = lw; lc.height = lh; this._lctx = null; }
     if (!this._lctx) this._lctx = lc.getContext('2d');
 
-    // Draw a viewport-plus-margin of city, remembering where the camera was.
-    // Panning then blits this at an offset instead of re-rendering, so a drag
-    // stays smooth until the camera walks past the margin.
+    this._cacheOx = this.ox; this._cacheOy = this.oy;
+    this._cacheW = W; this._cacheH = H;
+    this._cacheMx = mx; this._cacheMy = my;
+    this._cacheScale = this.scale; this._cacheDpr = dpr;
+    // what we now hold, in camera-independent units, for _cacheCovers
+    this._covL = -mx - this.ox; this._covR = W - mx - this.ox;
+    this._covT = -my - this.oy; this._covB = H - my - this.oy;
+
+    this._paintCity(s, null);
+  };
+
+  /* Paint the city into the cache. With no rect it is the whole cache, cleared
+     first; with one it is that rect only - clipped and cleared - which is how
+     a build or a level-up repaints a street corner instead of a city. */
+  Renderer.prototype._paintCity = function (s, R) {
+    var dpr = this._cacheDpr, W = this._cacheW, H = this._cacheH;
     var live = this.ctx, ox0 = this.ox, oy0 = this.oy, w0 = this.w, h0 = this.h;
     this.ctx = this._cctx;
-    this.ox += M; this.oy += M; this.w = W; this.h = H;
+    // the camera the cache was baked at, not wherever the live one has got to
+    this.ox = this._cacheOx + this._cacheMx; this.oy = this._cacheOy + this._cacheMy;
+    this.w = W; this.h = H;
 
     var ctx = this.ctx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, W, H);            // transparent: the sky is drawn live
+    this._clipR = R;                      // the layer passes cull against this
+    if (R) {
+      ctx.save();
+      ctx.beginPath(); ctx.rect(R.x0, R.y0, R.x1 - R.x0, R.y1 - R.y0); ctx.clip();
+      ctx.clearRect(R.x0, R.y0, R.x1 - R.x0, R.y1 - R.y0);
+    } else {
+      ctx.clearRect(0, 0, W, H);          // transparent: the sky is drawn live
+    }
     this._skipVeh = true;
 
     var n0 = this.N;
     this.N = 0;                           // the cached city is always at noon
     if (MM.gfx) MM.gfx.setLight(this._rm, this._gm, this._bm, 0);
 
-    this._collect(s);
+    this._collect(s, R);
     this._ground(s);
     this._roadPass(s);
     this._overlayPass(s);
+    this._dapple(s);
     this._shadows(s);
 
     var dim = this.overlay && this.overlay !== 'none';
     if (dim) ctx.globalAlpha = 0.55;
     this._structures(s);
     if (dim) ctx.globalAlpha = 1;
+    if (R) ctx.restore();
 
-    // the window-light layer, same camera, painted at full brightness
+    // the window-light layer, same camera, painted at full brightness but at
+    // its own (lower) resolution - _blitCache reads the ratio off the canvas
     this.ctx = this._lctx;
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.ctx.clearRect(0, 0, W, H);
+    ctx = this.ctx;
+    var ld = dpr * LIGHT_RES;
+    ctx.setTransform(ld, 0, 0, ld, 0, 0);
+    if (R) {
+      ctx.save();
+      ctx.beginPath(); ctx.rect(R.x0, R.y0, R.x1 - R.x0, R.y1 - R.y0); ctx.clip();
+      ctx.clearRect(R.x0, R.y0, R.x1 - R.x0, R.y1 - R.y0);
+    } else {
+      ctx.clearRect(0, 0, W, H);
+    }
     if (this.scale >= 0.42) this._paintWindows(s);
+    if (R) ctx.restore();
 
     this._skipVeh = false;
+    this._clipR = null;
     this.N = n0;
     this.ctx = live;
     this.ox = ox0; this.oy = oy0; this.w = w0; this.h = h0;
-    this._cacheOx = ox0; this._cacheOy = oy0; this._cacheW = W; this._cacheH = H;
+  };
+
+  /* Where the cache lands on screen right now. Everything is derived rather
+     than remembered, so this is also correct when the camera has zoomed since
+     the bake: the cached image is simply the same picture at another scale,
+     and blitting it scaled is what lets a wheel spin stay smooth while the
+     rebuild waits for the camera to settle. */
+  /* Blit the part of the cache that is actually on screen, and no more.
+     The cache is now most of a city - 9 megapixels of it - and handing all of
+     that to drawImage to be scaled and then clipped costs real time even
+     though nearly none of it lands. Source-rect form clips first. */
+  Renderer.prototype._blitCache = function (ctx, img, b) {
+    if (!img || !img.width || !this._cacheW) return;
+    var cd = img.width / this._cacheW;               // device px per cache css px
+    var k = b.k;
+    var sx0 = clamp((0 - b.x) / k, 0, this._cacheW);
+    var sx1 = clamp((this.w - b.x) / k, 0, this._cacheW);
+    var sy0 = clamp((0 - b.y) / k, 0, this._cacheH);
+    var sy1 = clamp((this.h - b.y) / k, 0, this._cacheH);
+    if (sx1 - sx0 < 0.5 || sy1 - sy0 < 0.5) return;
+    ctx.drawImage(img,
+      sx0 * cd, sy0 * cd, (sx1 - sx0) * cd, (sy1 - sy0) * cd,
+      b.x + sx0 * k, b.y + sy0 * k, (sx1 - sx0) * k, (sy1 - sy0) * k);
+  };
+
+  Renderer.prototype._blitAt = function () {
+    var k = this._cacheScale > 0 ? this.scale / this._cacheScale : 1;
+    return {
+      k: k,
+      x: (-this._cacheMx - this._cacheOx) * k + this.ox,
+      y: (-this._cacheMy - this._cacheOy) * k + this.oy,
+      w: this._cacheW * k, h: this._cacheH * k
+    };
   };
 
   Renderer.prototype.draw = function (s, dtMs) {
@@ -1587,23 +2345,21 @@ window.MM = window.MM || {};
 
     if (!s || !s.grid) return;
 
+    this._camera(dt);          // held keys and momentum, before anything reads ox/oy
+
     this._daynight(s, dt);
     this._palette();
 
     if (this.clock - this._netT > 400) { this._netT = this.clock; this._rebuildNet(s); }
     this._traffic(s, dt);
 
-    var ctx = this.ctx, L = this.L, gold = this.golden;
+    var ctx = this.ctx;
 
-    // sky (viewport-relative, so it is never cached)
-    var g = ctx.createLinearGradient(0, 0, 0, this.h);
-    g.addColorStop(0, rgbs(lerp3([18, 27, 52], [96, 164, 228], L)));
-    var bot = lerp3([34, 40, 62], [198, 226, 244], L);
-    bot = lerp3(bot, [236, 158, 92], gold * 0.7);
-    g.addColorStop(1, rgbs(bot));
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, this.w, this.h);
-    if (MM.light) MM.light.sky(ctx, this);   // the disc the whole scene points at
+    // Sky and sun. Viewport-relative, so the city cache cannot carry them -
+    // but they only move with the light, so they are baked (see _bakeAtmo)
+    // and this is one opaque blit instead of a linear and a radial gradient.
+    this._bakeAtmo();
+    ctx.drawImage(this._bgL, 0, 0, this.w, this.h);
 
     // The city is deterministic: every prop, roof and marking depends only on
     // the camera, the grid and the light. Redrawing 1400 tiles of detail every
@@ -1616,20 +2372,57 @@ window.MM = window.MM || {};
     // night and at 1 through most of the day, so these multipliers are literally
     // constant for long stretches and the cache survives them; only dawn and
     // dusk actually repaint. Keying on phase re-rendered every 0.3s forever.
-    var key = this.scale.toFixed(3) + '|' + this.w + 'x' + this.h + '|' +
-      (s.rev | 0) + '|' + ov + '|' +
+    //
+    // The zoom is deliberately NOT in the key either. A zoom does not make the
+    // cached image wrong, only the size it is drawn at, and _blitAt puts it up
+    // at the new scale for nothing. The rebuild that sharpens it can wait.
+    // s.rev is deliberately NOT in the key either. It is bumped by every edit
+    // and by every block that levels up on its own, and rebuilding the world
+    // for one new storey is what made building feel like wading. It is handled
+    // below instead, by repainting the tiles that actually look different.
+    var key = this.w + 'x' + this.h + '|' + ov +
       // no light term: the cached city does not change with the clock
       // the heatmaps are recomputed daily, so they alone track the calendar
       (ov === 'none' ? '' : '|' + (s.day | 0));
 
-    var dx = this.ox - this._cacheOx, dy = this.oy - this._cacheOy;
-    var slipped = Math.abs(dx) > CACHE_M - 8 || Math.abs(dy) > CACHE_M - 8;
-    if (key !== this._cacheKey || slipped || !this._cacheW) {
+    // A rebuild costs a third of a second on a built-up city, so it waits for
+    // the camera to stop. Through a drag or a wheel spin the existing cache is
+    // blitted where it now belongs instead, which is what turns a burst of
+    // freezes into a pan that keeps up with the mouse.
+    var moved = this.ox !== this._lastOx || this.oy !== this._lastOy ||
+      this.scale !== this._lastScale;
+    this._lastOx = this.ox; this._lastOy = this.oy; this._lastScale = this.scale;
+    this._still = moved ? 0 : this._still + 1;
+
+    var b = this._blitAt();
+    // Two things it cannot ride out: a cache that no longer covers what is on
+    // screen (that would be a hole), and one stretched far enough to look
+    // soft. Either forces the rebuild even mid-gesture.
+    // How far the cache may be stretched before it has to be redrawn mid
+    // gesture. Generous, and deliberately lopsided: shrinking the cached
+    // image only supersamples it and stays sharp, while blowing it up goes
+    // soft, so the two ends are not worth the same tolerance. A whole wheel
+    // burst rides on one image and sharpens the moment the wheel stops -
+    // which is how a map behaves, and much better than the alternative of a
+    // 750ms rebuild landing in the middle of the gesture.
+    var must = key !== this._cacheKey || !this._cacheW || !this._cacheCovers() ||
+      b.k < 0.12 || b.k > 3.00;
+    var rev = s.rev | 0;
+    if (must || (this._cacheScale !== this.scale && this._still >= 1)) {
       this._renderStatic(s);
-      this._cacheKey = key;
-      dx = 0; dy = 0;
+      this._commitSig(s);
+      this._cacheKey = key; this._cacheRev = rev;
+      b = this._blitAt();
+    } else if (rev !== this._cacheRev) {
+      // The city changed under us. Repaint only what looks different - and
+      // often that is nothing at all, because plenty of rev bumps move a
+      // number the static pass never draws.
+      var d = this._dirty(s);
+      if (d && d.all) { this._renderStatic(s); b = this._blitAt(); this._commitSig(s); }
+      else if (d) { if (!this._patchStatic(s, d)) this._renderStatic(s); this._commitSig(s); }
+      this._cacheRev = rev;
     }
-    ctx.drawImage(this._cc, dx - CACHE_M, dy - CACHE_M, this._cacheW, this._cacheH);
+    this._blitCache(ctx, this._cc, b);
 
     // The water surface is live, over the blit and under the traffic.
     if (MM.light) MM.light.shimmer(ctx, this, s);
@@ -1650,26 +2443,31 @@ window.MM = window.MM || {};
     }
 
     this._tint(s);
-    if (MM.light) MM.light.glow(ctx, this);      // directional wash from the sun
+
+    // Everything additive, in one pass each: the sun's wash (baked), the lit
+    // windows (baked with the city) and the street lamps. Additive composites
+    // commute, so their order among themselves does not matter.
+    if (this._addOn) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.drawImage(this._addL, 0, 0, this.w, this.h);
+      ctx.restore();
+    }
     if (this.N > 0.10 && this.scale >= 0.42) {   // lit windows, one blit
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha = Math.min(1, 0.72 * this.N);
-      ctx.drawImage(this._lc, dx - CACHE_M, dy - CACHE_M, this._cacheW, this._cacheH);
+      this._blitCache(ctx, this._lc, b);
       ctx.restore();
     }
     this._lampGlow();
 
+    // aerial perspective and the vignette, baked together into one blit
+    ctx.drawImage(this._ovL, 0, 0, this.w, this.h);
+
+    // Hover sits over the vignette now rather than under it, which costs
+    // nothing and keeps the cursor readable in the darkened corners.
     this._hoverPass(s);
-
-    if (this._vig) {
-      ctx.save();
-      ctx.globalAlpha = 0.55 + 0.35 * this.N;
-      ctx.fillStyle = this._vig;
-      ctx.fillRect(0, 0, this.w, this.h);
-      ctx.restore();
-    }
-
   };
 
   function lerp3 (a, b, t) { return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]; }
