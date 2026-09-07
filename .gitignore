@@ -2,3 +2,5 @@ node_modules/
 dist/
 build/*.png
 !build/icon.png
+
+.env
