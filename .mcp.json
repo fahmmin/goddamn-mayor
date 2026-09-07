@@ -7,6 +7,18 @@
     "hedera-docs": {
       "type": "http",
       "url": "https://docs.hedera.com/mcp"
+    },
+    "subgraph": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "--header",
+        "Authorization:${AUTH_HEADER}",
+        "https://subgraphs.mcp.thegraph.com/sse"
+      ],
+      "env": {
+        "AUTH_HEADER": "Bearer 970679de6bcb06dab8c353636f14e3ae"
+      }
     }
   }
 }

@@ -321,8 +321,32 @@ window.MM = window.MM || {};
     ctx.restore();
   }
 
+  /* ---- 6. what the washes depend on ----------------------------------
+     sky(), glow() and haze() each evaluate a gradient across the whole
+     viewport. That costs 2ms for a linear one and 3.6ms for a radial - ten
+     times what it costs to blit the same pixels - and there are four of them
+     in a frame. None of them touches the grid or the camera: they are a pure
+     function of the light and the window, so render.js bakes them into
+     offscreen layers and blits those instead.
+
+     This is the key that says when a bake is stale. The washes are smooth,
+     so both the sun's position and the light are quantised: a gradient that
+     moves three pixels is the same gradient, and without the buckets the
+     layer would rebake every frame and we would be paying for the gradient
+     again plus a blit.                                                     */
+  function key (R) {
+    return ((sun.day * 20) | 0) + ',' + ((sun.gold * 20) | 0) + ',' +
+      ((sun.elev * 20) | 0) + ',' + ((sun.sx / 16) | 0) + ',' + ((sun.sy / 16) | 0) +
+      ',' + (R.w | 0) + 'x' + (R.h | 0);
+  }
+
+  /* Is there anything in the additive wash at all? Through the middle of the
+     night there is not, and an empty layer is a blit worth skipping. */
+  function glowAlpha () { return 0.10 * sun.day + 0.42 * sun.gold; }
+
   MM.light = {
     sun: sun, update: update, skyTone: skyTone,
-    sky: sky, reflect: reflect, shimmer: shimmer, glow: glow, haze: haze
+    sky: sky, reflect: reflect, shimmer: shimmer, glow: glow, haze: haze,
+    key: key, glowAlpha: glowAlpha
   };
 })(window.MM);

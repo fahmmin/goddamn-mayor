@@ -93,15 +93,28 @@ into an offscreen cache, so this file is split the same way:
 - `MM.light.reflect(ctx, r, s)` - **baked**. Water mirrors. Called from inside
   the static pass, before roads and structures, so a building on the near bank
   occludes the reflection of one on the far bank for free.
-- `MM.light.sky(ctx, r)` - **live**. Sun disc and haze, or the moon after dark.
+- `MM.light.sky(ctx, r)` - Sun disc and haze, or the moon after dark.
 - `MM.light.shimmer(ctx, r, s)` - **live**. Sky sheen, two wave trains and sun
   glitter on open water. Three fills total; drops out below scale 0.62.
-- `MM.light.glow(ctx, r)` - **live**. The directional wash from the sun's screen
+- `MM.light.glow(ctx, r)` - The directional wash from the sun's screen
   position, on top of render.js's flat ambient `_tint`.
-- `MM.light.haze(ctx, r)` - **live**. Aerial perspective: air scatters enough
+- `MM.light.haze(ctx, r)` - Aerial perspective: air scatters enough
   light to lift the far end of a view towards the sky's colour, and an
   isometric camera puts "far" straight up the screen. Keyed to the screen, not
-  the ground, so it must not be baked.
+  the ground, so it cannot go in the *city* cache.
+- `MM.light.key(r)` - what those three washes depend on, as a string. They are
+  a pure function of the light and the window, and each is a full-viewport
+  gradient - 2ms for a linear one and 3.6ms for a radial, against 1.2ms to
+  blit the same pixels. So render.js paints them into offscreen layers once
+  per light bucket and blits those (`_bakeAtmo`); this key says when a bake
+  has gone stale. It quantises the sun's position and the light, or the layer
+  rebakes every frame and the gradient is paid for anyway.
+- `MM.light.glowAlpha()` - strength of the additive wash, so an empty layer
+  can be skipped rather than blitted.
+
+Because they are baked, `sky/glow/haze` must draw only from `sun`, `r.w/h` and
+`r.L/N/golden` - never from the grid, the camera or the clock directly - and
+must not assume they are drawing into the live context.
 
 Reflective *shading* is not here: it lives in `gfx.setSun/gfx.spec`, which adds a
 specular lobe inside the existing wall fill in `extrude`/`faces`, so every module
@@ -145,7 +158,39 @@ on the open sky. Baked at noon like the rest of the cache.
 - `r.resize()`, `r.draw(state, dtMs)`
 - `r.screenToTile(px,py)` -> `{x,y}` or `null`
 - `r.panBy(dx,dy)`, `r.zoomAt(px,py,delta)`, `r.centerOn(x,y)`
+- `r.panHold(dx,dy,boost)` - unit direction for held keys, or `(0,0)` to stop
+- `r.fling(vx,vy)` - throw the map, px/s; `r.stopPan()` kills both
+- `r.clampCamera()` - keep some city on screen
 - `r.hover = {x,y}|null`, `r.overlay = 'none'|'value'|'traffic'|'pollution'`
+
+**The cache is the performance contract.** A rebuild is 400-900ms of vector
+drawing on a built-up city, so the whole design is about not doing one:
+
+- It caches **as much of the city as a device-pixel budget allows** rather than
+  a viewport plus a fixed margin. The grid is 48x48, so at ordinary zooms the
+  whole city fits and a pan is a blit and nothing else. Zoomed past that, the
+  margin falls back to whatever the budget buys.
+- A rebuild **waits for the camera to stop**. Mid-gesture the existing cache is
+  blitted where it now belongs and at the size it now wants (`_blitAt`), so a
+  zoom goes soft for the length of the wheel spin and sharpens when it ends,
+  rather than dropping a 750ms freeze into the middle of it.
+- A grid change repaints **only the tiles whose picture changed**. `_sig` builds
+  a per-tile signature (tile, level, the neighbours a road links to, and the
+  identity of the lot covering it); diffing it against the last bake gives the
+  exact dirty set, and `_paintCity(s, rect)` repaints that rect under a clip.
+  `s.rev` is bumped by every player edit *and* by every block that levels up on
+  its own, so this path runs constantly.
+- Canvas memory is part of the contract. Chromium keeps 2D canvases on the GPU
+  only up to a budget and silently drops to software past it, which costs about
+  10x. Keep the total (city cache + light layer + shadow layer + live) well
+  under 100MB; the light layer is held at half resolution for this reason, and
+  it is why the shadow blur rides out on its blit rather than getting a second
+  canvas of its own.
+
+`tools/perf.js` measures all of it. Note that canvas2d is queued: timing a draw
+call measures nothing until the pipeline is drained, so drain with getImageData
+once per block of frames - never per frame, where the drain costs more than the
+frame.
 
 ### src/ui.js -> `MM.UI` (+ owns src/style.css)
 - `new MM.UI(rootEl, state, handlers)` with handlers
@@ -157,7 +202,11 @@ on the open sky. Baked at noon like the rest of the cache.
 `pointer-events:none` with `pointer-events:auto` on the actual controls, so map dragging still works.
 
 ## Rules
-- Only edit the files you own. Never edit state.js or game.js. index.html changes
+- Only edit the files you own. Never edit state.js. index.html changes
   only to add a module `<script>`, and then smoke.js's load order must match.
+- game.js is the lead's. The one thing module agents may ask of it is input
+  wiring for a camera API render.js exposes (held keys, drag velocity); the
+  camera itself lives in render.js, which is the only thing that sees a frame
+  and can integrate against real time.
 - No network calls, no external fonts, no CDN. CSP is `default-src 'self'`.
 - Must run from `file://` inside Electron.
