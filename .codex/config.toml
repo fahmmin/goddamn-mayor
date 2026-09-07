@@ -1,0 +1,5 @@
+[mcp_servers.hedera-docs]
+url = "https://docs.hedera.com/mcp"
+
+[mcp_servers.privy-docs]
+url = "https://docs.privy.io/mcp"
