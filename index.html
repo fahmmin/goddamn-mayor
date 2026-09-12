@@ -21,7 +21,7 @@
     https://auth.privy.io
     https://api.privy.io;
 ">
-<title>MAYOR MAMDANI</title>
+<title>OBSICITY — the city is a public company</title>
 <link rel="icon" type="image/svg+xml" href="src/favicon.svg">
 <link rel="stylesheet" href="src/style.css">
 </head>
@@ -50,6 +50,9 @@
   <script src="src/ui.js"></script>
   <script src="src/demo.js"></script>
   <script src="src/game.js"></script>
+  <!-- The shell loads after game.js because it drives MM.state and
+       MM.renderer, which game.js creates. It never edits either. -->
+  <script src="src/shell.js"></script>
   <!-- The chain layer, bundled separately and loaded last. It writes
        state.chain and nothing else. Remove this one tag and the page is
        exactly the game it was before: src/*.js never reaches the network. -->

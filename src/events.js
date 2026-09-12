@@ -1,4 +1,4 @@
-/* MAYOR MAMDANI - city events. Owned by the content agent. */
+/* OBSICITY - city events. Owned by the content agent. */
 window.MM = window.MM || {};
 (function (MM) {
   'use strict';

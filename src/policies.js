@@ -1,4 +1,4 @@
-/* MAYOR MAMDANI - policies. Owned by the content agent. */
+/* OBSICITY - policies. Owned by the content agent. */
 window.MM = window.MM || {};
 (function (MM) {
   'use strict';

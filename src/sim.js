@@ -1,4 +1,4 @@
-/* MAYOR MAMDANI - simulation. Owned by the sim agent. */
+/* OBSICITY - simulation. Owned by the sim agent. */
 window.MM = window.MM || {};
 (function (MM) {
   'use strict';

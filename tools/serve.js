@@ -7,14 +7,20 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const PORT = Number(process.argv[2] || process.env.PORT || 8080);
+/* argv[2] is a port only when a human typed one. Electron fills argv with
+ * its own switches, and Number('--inspect') is NaN, which listen() then
+ * treats as "any free port" - the window would load localhost:8080 and find
+ * nothing there. Take it only when it actually parses as a port. */
+const fromArgv = Number(process.argv[2]);
+const PORT = (Number.isInteger(fromArgv) && fromArgv > 0 && fromArgv < 65536)
+  ? fromArgv : Number(process.env.PORT || 8080);
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json',
   '.png': 'image/png', '.ico': 'image/x-icon', '.svg': 'image/svg+xml'
 };
 
-http.createServer((req, res) => {
+const server = http.createServer((req, res) => {
   const rel = decodeURIComponent(req.url.split('?')[0]);
   const file = path.join(ROOT, rel === '/' ? 'index.html' : rel);
   // never serve outside the repo, whatever the request says
@@ -27,4 +33,10 @@ http.createServer((req, res) => {
     });
     res.end(buf);
   });
-}).listen(PORT, () => console.log('MAYOR MAMDANI  ->  http://localhost:' + PORT));
+});
+
+server.listen(PORT, () => console.log('OBSICITY  ->  http://localhost:' + PORT));
+
+/* main.js requires this file to run the desktop build against a real origin
+ * rather than file://, and closes the server on quit. */
+module.exports = server;

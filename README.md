@@ -1,6 +1,6 @@
-# MAYOR MAMDANI
+# OBSICITY
 
-An isometric New York City-builder that runs in a window next to your IDE.
+An isometric New York city-builder that you can underwrite. Runs in a browser, or in a window next to your IDE.
 
 You are the Mayor. You have four years, a treasury, and a city that will tell you
 loudly when you get it wrong. Zone it, wire it with roads and buses, pass the
@@ -16,12 +16,21 @@ npm install
 npm run serve      # → http://localhost:8080
 ```
 
-That is the build the Web3 layer targets. `npm start` still opens the Electron
-window if you prefer it next to your IDE.
+The browser is the primary build and the one the Web3 layer targets. `npm start`
+opens the same thing in a desktop window — and it is genuinely the same thing:
+the Electron shell now starts this static host and loads `http://localhost:8080`
+rather than `loadFile`ing the page. A `file://` page has a null origin, which
+cannot hold a Privy session and gets rejected by most RPC endpoints, so the
+desktop build would otherwise have been the only build with no chain layer.
+
+You land on the **title screen**, not in the middle of a city. Enter from there,
+press `Esc` at any time to come back, and find how-to-play, the chain writeup,
+graphics and sound in the menu.
 
 Two switches on the URL: `?diorama` freezes the economy and holds the city
 exactly as planned (the mode to shoot stills in), `?play` opens on the starter
 block instead of the built-out city.
+
 
 ## Build a Windows executable
 
@@ -29,7 +38,7 @@ block instead of the built-out city.
 npm run dist
 ```
 
-Output lands in `dist/MayorMamdani-win32-x64/`. `MayorMamdani.exe` is the game —
+Output lands in `dist/Obsicity-win32-x64/`. `Obsicity.exe` is the game —
 the folder is self-contained and portable; copy it anywhere.
 
 ## Checks
@@ -105,9 +114,11 @@ panel later.
 | `src/events.js` | things that happen to a city |
 | `src/audio.js` | synthesized sound, no assets |
 | `src/game.js` | input, main loop, build/bulldoze, wiring |
+| `src/shell.js` | title screen, menu, panels, pause — the front of the product |
 | `src/districts.js` | the nine districts, and what each one is worth |
-| `tools/serve.js` | static host, no dependencies |
-| `chain/` | ENSv2 addresses, ABIs, preflight — the only place npm deps live |
+| `tools/serve.js` | static host, no dependencies — also what the desktop build serves |
+| `chain/` | ENSv2 addresses, ABIs, deploy, verification — npm deps live here |
+| `web3/` | Privy + viem, bundled separately so `src/` never gains a dependency |
 
 `CONTRACT.md` is the interface between those modules and the reason several of
 them could be written at the same time.
@@ -136,14 +147,14 @@ and it will not accept a write from anyone who does not hold
 > district, every parcel and every tenant is an ENS name, and the names are not
 > labels: holding one is what grants the permission to act.
 
-Three tracks, one chain (Sepolia), because a system a judge can hold in their
+Two tracks, one chain (Sepolia), because a system a judge can hold in their
 head beats three bolt-ons they cannot:
 
-| Track | What it does here |
-|---|---|
-| **ENS** (ENSv2) | The city is a namespace. `mayor.…eth` **expires** with the four-year term, is **revoked** by the recall the simulation already triggers, and is **non-transferable** because an office cannot be sold — while a parcel deed can. Each district deploys its own registry and issues its own parcels. |
-| **The Graph** | A standardized ERC-4626 subgraph over the district vaults, composed with Substreams on the same chain. It is what makes the live numbers real rather than asserted. |
-| **Privy** | Embedded wallets, so anyone is in the economy in ten seconds with no seed phrase. The treasury is a shared organization wallet behind a key quorum. |
+| Track | What it does here | Status |
+|---|---|---|
+| **ENS** (ENSv2) | The city is a namespace. `mayor.…eth` **expires** with the four-year term, is **revoked** by the recall the simulation already triggers, and is **non-transferable** because an office cannot be sold — while a district deed can. Each district deploys its own registry. | **Live**, 8/8 in `verify-gate.js` |
+| **Privy** | Embedded wallets, so anyone is in the economy in under a minute with no seed phrase, plus the treasury flow behind the vaults. | **Live** |
+| ~~The Graph~~ | A standardized ERC-4626 subgraph over the district vaults. The vaults are deliberately stock ERC-4626 so this is a small step rather than a rewrite — but nothing is deployed to Subgraph Studio, so it is **not** entered. | Roadmap, not submitted |
 
 ### Why ENS is load-bearing, not decoration
 

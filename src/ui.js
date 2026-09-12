@@ -1,4 +1,4 @@
-/* MAYOR MAMDANI - HUD. Owned by the ui agent. Pairs with src/style.css. */
+/* OBSICITY - HUD. Owned by the ui agent. Pairs with src/style.css. */
 window.MM = window.MM || {};
 (function (MM) {
   'use strict';
@@ -205,8 +205,10 @@ window.MM = window.MM || {};
     const brand = el('div', 'brand', bar);
     icon(el('div', 'city-seal', brand), 'city');
     const mark = el('div', 'mark', brand);
+    /* The product is OBSICITY; "Mayor" is the role you are playing in it,
+     * which is why the small line above the wordmark still says so. */
     el('span', 'm1', mark, 'MAYOR');
-    el('span', 'm2', mark, 'MAMDANI');
+    el('span', 'm2', mark, 'OBSICITY');
     const clock = el('div', 'clock', brand);
     this._dayEl = el('div', 'day', clock, 'Day 1');
     this._yearEl = el('div', 'year', clock, 'Year 1 of 4');
