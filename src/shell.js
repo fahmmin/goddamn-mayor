@@ -50,37 +50,51 @@ window.MM = window.MM || {};
      region from districts.js, so the camera is always pointed at something
      that exists. tx/ty are tile coords, z is renderer.scale, hour sets the
      light. See src/demo.js:49-62. */
+  /* Each stop carries its own argument, not a feature. `lede` is the line that
+     has to land; `body` is the two sentences that earn it. `name` is the short
+     form the ledger in the bottom-right stands up - deliberately separate from
+     `title`, because a heading and a list entry want different lengths. */
   var STOPS = [
-    { key: 'city', title: "I'm the Goddamn Mayor", kicker: 'AN ISOMETRIC CITY THAT ANSWERS TO ITS MARKET',
-      body: 'You are the Mayor. Four years, a treasury, and a city that will tell you loudly when you get it wrong.',
+    { key: 'city', name: '', title: "I'm the Goddamn Mayor",
+      kicker: 'ONE TERM · YOUR NAME ON IT',
+      body: 'You have watched a city get it wrong. The bus line went the wrong way. The money landed in the wrong district.',
+      quote: 'He should have done this instead of that. Put the money here, not there.',
+      punch: 'Had that moment? Good. Take the office.',
       tx: 24, ty: 24, z: 0.40, hour: 17, hero: true },
 
-    { key: 'airfield', title: 'The airfield', kicker: 'AIRPORT LOW-RISE',
-      body: 'Nine blocks of runway on the northern edge, and the low-rise that grew up around it. Every district is a name: airfield.cityhall.eth.',
+    { key: 'airfield', name: 'AIRFIELD', title: 'The airfield', kicker: 'AIRPORT LOW-RISE',
+      lede: 'You do not get advice. You get consequences.',
+      body: 'Nine blocks of runway on the northern edge. Everything you build has an address and a bill, and both arrive whether you were paying attention or not.',
       tx: 5.5, ty: 5.5, z: 0.95, hour: 6 },
 
-    { key: 'downtown', title: 'Downtown', kicker: 'THE TOWERS',
-      body: 'The height rules bend once, in the middle, for the one building allowed to break them. Land value is highest here, so this is where a district is worth the most.',
+    { key: 'downtown', name: 'DOWNTOWN', title: 'Downtown', kicker: 'THE TOWERS',
+      lede: 'The height rules bend once, for you.',
+      body: 'Land value is highest here, which is exactly why the wrong call costs the most here. One building in this city is allowed to break the rules. You pick it.',
       tx: 22.5, ty: 22.5, z: 1.45, hour: 12 },
 
-    { key: 'marina', title: 'The marina', kicker: 'RIVERSIDE TOWERS',
-      body: 'Water on the east edge, and the most expensive addresses in the city looking at it.',
+    { key: 'marina', name: 'MARINA', title: 'The marina', kicker: 'RIVERSIDE TOWERS',
+      lede: 'Somebody is going to get rich off this water.',
+      body: 'The most expensive addresses in the city are looking at it. You set what they pay.',
       tx: 37.5, ty: 8, z: 1.25, hour: 9 },
 
-    { key: 'shops', title: 'The high street', kicker: 'UPTOWN',
-      body: 'Groceries, clinics, childcare. Services are what keep approval up - and approval is what keeps your name from expiring early.',
+    { key: 'shops', name: 'HIGH STREET', title: 'The high street', kicker: 'UPTOWN',
+      lede: 'Approval is not a score. It is your term.',
+      body: 'Groceries, clinics, childcare. Let them slip and your name expires early - onchain, publicly, with your address on it.',
       tx: 24, ty: 8.5, z: 1.55, hour: 15 },
 
-    { key: 'stadium', title: 'The stadium', kicker: 'THE WEST SIDE',
-      body: 'And the funfair below it. Parks and spectacle cost money every single day and return it in land value.',
+    { key: 'stadium', name: 'STADIUM', title: 'The stadium', kicker: 'THE WEST SIDE',
+      lede: 'Spend money on joy. Watch it come back.',
+      body: 'Parks and spectacle cost you every single day and return it in land value. Nobody believes that until they run it.',
       tx: 3, ty: 28, z: 1.25, hour: 19 },
 
-    { key: 'port', title: 'The waterfront', kicker: 'WORKS & WHARVES',
-      body: 'The container port and the power station. Somebody has to pay for the towers, and it is usually down here.',
+    { key: 'port', name: 'WATERFRONT', title: 'The waterfront', kicker: 'WORKS & WHARVES',
+      lede: 'The towers do not pay for themselves.',
+      body: 'The container port and the power station. Every skyline is subsidised by somewhere nobody photographs.',
       tx: 32, ty: 39, z: 1.15, hour: 21 },
 
-    { key: 'people', title: 'The blocks', kicker: 'RED HOOK',
-      body: 'Where the residents actually live. Twenty-five thousand of them, each one a number in the rent index you are about to be judged on.',
+    { key: 'people', name: 'THE BLOCKS', title: 'The blocks', kicker: 'RED HOOK',
+      lede: 'Twenty-five thousand people. Each one a number you own.',
+      body: 'This is where the residents live. The rent index you are judged on is made of them.',
       tx: 8, ty: 41, z: 1.6, hour: 18, last: true }
   ];
 
@@ -148,13 +162,20 @@ window.MM = window.MM || {};
       var box = el('div', 'obs-copy', sec);
       el('div', 'obs-kicker', box, s.kicker);
       if (s.hero) {
+        /* Three explicit lines rather than one wrapping string. At this size a
+           wrap is a layout decision, not a typesetting accident, and letting
+           the viewport pick where GODDAMN breaks would be the latter. */
         var h1 = el('h1', 'obs-title', box);
-        el('span', null, h1, 'IM THE GODDAMN ');
-        el('em', null, h1, 'MAYOR');
+        el('span', 'l', h1, 'IM THE');
+        el('span', 'l', h1, 'GODDAMN');
+        el('em', 'l', h1, 'MAYOR');
       } else {
         el('h2', 'obs-stop', box, s.title);
       }
+      if (s.lede) el('p', 'obs-lede', box, s.lede);
       el('p', 'obs-body', box, s.body);
+      if (s.quote) el('blockquote', 'obs-quote', box, '“' + s.quote + '”');
+      if (s.punch) el('p', 'obs-punch', box, s.punch);
 
       if (s.hero) {
         var cta = el('div', 'obs-cta', box);
@@ -170,12 +191,22 @@ window.MM = window.MM || {};
       return { sec: sec, stop: s, box: box };
     });
 
-    // ---- stop rail ----
-    var rail = el('div', 'obs-rail', root);
+    /* ---- the district ledger, bottom-right ----
+       Was a column of dots with hover-only labels, which meant the city's
+       districts were invisible unless you already knew to look for them.
+       Every name now stands up at once: the one you are looking at is lit,
+       the ones behind you stay legible, the ones ahead sit back. By the last
+       stop the whole list is lit, which is the point - each line is somewhere
+       you can actually go and build. */
+    var rail = el('div', 'obs-ledger', root);
     this._dots = STOPS.map(function (s, i) {
-      var d = on(el('button', 'obs-dot', rail), function () { self.scrollTo(i); });
-      d.setAttribute('aria-label', s.title);
-      el('span', 'obs-dot-label', d, s.title);
+      var d = on(el('button', 'obs-led', rail), function () { self.scrollTo(i); });
+      d.setAttribute('aria-label', s.name || s.title);
+      /* Stop 0 is the title screen and names no district, so it keeps a slot
+         in the rail for scrubbing but shows nothing. */
+      if (!s.name) d.classList.add('blank');
+      el('span', 'obs-led-rule', d);
+      el('span', 'obs-led-name', d, s.name || '');
       return d;
     });
 
@@ -279,9 +310,13 @@ window.MM = window.MM || {};
        clock is paused, which is the only reason writing it here is safe. */
     if (s) s.tick = Math.round(lerp(a.hour, b.hour, t)) % 24;
 
+    /* Three states, not two. "passed" is what makes the ledger accumulate as
+       you ride instead of flicking a single highlight down a list. */
     var near = Math.round(seg);
     for (var k = 0; k < this._dots.length; k++) {
-      this._dots[k].classList.toggle('on', k === near);
+      var dot = this._dots[k];
+      dot.classList.toggle('on', k === near);
+      dot.classList.toggle('past', k < near);
     }
     /* Copy fades with distance from its own stop, so only one block of text
        is ever legible and the rest are out of the way of the view. */
