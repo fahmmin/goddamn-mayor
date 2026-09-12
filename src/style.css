@@ -221,6 +221,60 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* ---------- bottom dock ---------- */
 .mm-dock { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 8px; align-items: center; }
+
+/* ---- the chapter card ----
+   Bottom-left, above the dock. The whole brief for this element was "good
+   gamification, not overstimulating", so it is one card, it never animates on
+   its own, it never blocks input, and the only thing that moves without being
+   clicked is a 2px rule. */
+.mm-quest {
+  position: absolute; left: 10px; bottom: 62px; width: 268px;
+  pointer-events: auto; overflow: hidden;
+  background: var(--glass); border: 1px solid var(--line);
+  border-radius: 12px; box-shadow: var(--shadow);
+}
+.q-head {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 9px 11px 8px; text-align: left;
+}
+.q-ch { flex: 1; font-size: 10px; letter-spacing: 1.5px; color: var(--text); font-weight: 700; }
+.q-count { font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
+.q-caret {
+  width: 7px; height: 7px; border-right: 1.5px solid var(--dim); border-bottom: 1.5px solid var(--dim);
+  transform: rotate(-45deg); transition: transform .22s; margin-left: 1px;
+}
+.mm-quest.open .q-caret { transform: rotate(45deg); }
+
+.q-bar { height: 2px; background: var(--line2); }
+.q-bar i { display: block; height: 100%; background: var(--amber); transition: width .45s ease; }
+
+.q-hint {
+  padding: 8px 11px 9px; font-size: 11px; line-height: 1.45; color: var(--text2);
+}
+.mm-quest.finished .q-hint { display: none; }
+
+/* Collapsed hides the list, never the hint: one line of what to do next is
+   the reason the card exists at all. */
+.q-list { margin: 0; padding: 0 11px 10px; list-style: none; display: none; }
+.mm-quest.open .q-list { display: block; }
+.q-step {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11.5px; color: var(--text2); padding: 3px 0;
+}
+.q-tick {
+  width: 11px; height: 11px; border-radius: 50%; flex: none;
+  border: 1.5px solid var(--line); transition: background .2s, border-color .2s;
+}
+.q-step.done { color: var(--dim); text-decoration: line-through; text-decoration-thickness: 1px; }
+.q-step.done .q-tick { background: var(--green); border-color: var(--green); }
+
+.clock.rank { min-width: 74px; }
+.clock.rank .day { font-family: var(--ui); font-size: 12.5px; font-weight: 600; color: var(--amber); }
+
+@media (max-height: 680px) { .mm-quest { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .q-bar i, .q-caret, .q-tick { transition: none; }
+}
 .mm-dock .seg { padding: 3px; gap: 2px; border-radius: 11px; }
 .mm-dock .cap { font-size: 8.5px; letter-spacing: 1.3px; color: var(--dim); padding: 0 7px; align-self: center; }
 .ob {

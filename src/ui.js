@@ -187,6 +187,7 @@ window.MM = window.MM || {};
     this._buildRail(root, state);
     this._buildMarket(root);
     this._buildDock(root);
+    this._buildQuest(root);
     this._buildToasts(root);
     this._buildModal(root);
     this._buildOver(root);
@@ -224,6 +225,11 @@ window.MM = window.MM || {};
     const clock = el('div', 'clock', brand);
     this._dayEl = el('div', 'day', clock, 'Day 1');
     this._yearEl = el('div', 'year', clock, 'Year 1 of 4');
+    /* What the chapters have made you. A word, not a bar - it changes six
+       times in a whole game and never ticks. */
+    const rank = el('div', 'clock rank', brand);
+    this._lvlEl = el('div', 'day', rank, '');
+    el('div', 'year', rank, 'standing');
 
     const stats = el('div', 'stats', bar);
     for (let i = 0; i < STATS.length; i++) {
@@ -490,6 +496,108 @@ window.MM = window.MM || {};
         if (Date.now() >= self._resetArmed) { setText(self._resetBtn, 'Reset'); setCls(self._resetBtn, 'armed', false); }
       }, 4100);
     });
+  };
+
+  /* ---- the chapter card ----
+     One element, bottom-left, above the dock. Collapsed it is a single line;
+     open it is the current chapter's steps. Everything it shows comes from
+     MM.quests.check(), which is a pure reading of state - this file stores no
+     progress and the save gains no field.
+
+     Deliberately the only new thing on screen. The city is already a HUD full
+     of numbers moving; a second system competing for attention would make
+     both unreadable. One chime per step, one toast per chapter, nothing that
+     blocks, nothing that ticks. */
+  var QUEST_OPEN_KEY = 'mamdani.quests.open';
+
+  UI.prototype._buildQuest = function (root) {
+    var self = this;
+    if (!MM.quests) return;
+
+    var card = el('div', 'mm-quest', root);
+    this._quest = card;
+
+    var head = on(el('button', 'q-head', card), function () { self._toggleQuest(); });
+    this._qChapter = el('span', 'q-ch', head, '');
+    this._qCount = el('span', 'q-count', head, '');
+    this._qCaret = el('span', 'q-caret', head, '');
+
+    var bar = el('div', 'q-bar', card);
+    this._qFill = el('i', null, bar);
+
+    this._qHint = el('div', 'q-hint', card, '');
+
+    this._qList = el('ul', 'q-list', card);
+    this._qRows = [];
+
+    /* Whether the card is open is a per-device convenience, not part of the
+       city - it belongs in localStorage and not in the save, which travels. */
+    var open = true;
+    try { open = localStorage.getItem(QUEST_OPEN_KEY) !== '0'; } catch (e) { /* private mode */ }
+    this._qOpen = open;
+    setCls(card, 'open', open);
+
+    this._qPrev = null;
+  };
+
+  UI.prototype._toggleQuest = function () {
+    this._qOpen = !this._qOpen;
+    setCls(this._quest, 'open', this._qOpen);
+    try { localStorage.setItem(QUEST_OPEN_KEY, this._qOpen ? '1' : '0'); } catch (e) { /* private mode */ }
+    if (MM.audio) MM.audio.play('ui');
+  };
+
+  /* Called every frame, so it diffs rather than rebuilds - except when the
+     chapter itself changes, which is the one moment the row count can differ
+     and is rare enough to afford. */
+  UI.prototype._syncQuest = function (s) {
+    if (!this._quest || !MM.quests) return;
+    var q = MM.quests.check(s);
+    var prev = this._qPrev;
+    var i;
+
+    if (!prev || prev.id !== q.id) {
+      this._qList.textContent = '';
+      this._qRows = [];
+      for (i = 0; i < q.steps.length; i++) {
+        var li = el('li', 'q-step', this._qList);
+        el('i', 'q-tick', li);
+        el('span', null, li, q.steps[i].label);
+        this._qRows.push(li);
+      }
+      setText(this._qChapter, q.complete ? 'ALL CHAPTERS DONE' : (q.title || '').toUpperCase());
+    }
+
+    for (i = 0; i < q.steps.length; i++) {
+      if (this._qRows[i]) setCls(this._qRows[i], 'done', q.steps[i].done);
+    }
+    setText(this._qCount, q.done + '/' + q.total);
+    setText(this._qHint, q.hint);
+    setCls(this._quest, 'finished', !!q.complete);
+    this._qFill.style.width = (q.total ? (q.done / q.total) * 100 : 0).toFixed(1) + '%';
+
+    var lv = MM.quests.level(s);
+    if (this._lvlEl) setText(this._lvlEl, lv.title);
+
+    /* "Just completed" needs a memory of the last frame, not a field on the
+       save: the previous reading is right here and diffing it is enough. */
+    if (prev) {
+      if (q.id === prev.id) {
+        for (i = 0; i < q.steps.length; i++) {
+          if (q.steps[i].done && !prev.doneIds[q.steps[i].id]) {
+            if (MM.audio) MM.audio.play('coin');
+            break;                                  // one chime, not one per step
+          }
+        }
+      } else if (q.chaptersDone > prev.chaptersDone) {
+        if (MM.audio) MM.audio.play('levelup');
+        this.toast(prev.title + ' - done. You are ' + lv.title + '.', 'good');
+      }
+    }
+
+    var ids = {};
+    for (i = 0; i < q.steps.length; i++) if (q.steps[i].done) ids[q.steps[i].id] = true;
+    this._qPrev = { id: q.id, title: q.title, doneIds: ids, chaptersDone: q.chaptersDone };
   };
 
   UI.prototype._syncOverlay = function () {
@@ -993,6 +1101,7 @@ window.MM = window.MM || {};
     this._updateMarket(s, d, now);
 
     this._syncLog(s);
+    this._syncQuest(s);
 
     if (s.gameOver && !this._overShown) { this._overShown = true; this._showOver(s); }
   };

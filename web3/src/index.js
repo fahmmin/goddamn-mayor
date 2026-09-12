@@ -77,6 +77,13 @@ async function snapshot () {
       canPush: w ? await canPush(w.address) : false
     };
     ch.wallet = w ? { address: w.address } : null;
+    /* Cash and vault positions, published for src/quests.js - which is a pure
+       reading of state and so cannot await anything itself. Wrapped on its own
+       because a balance is decoration: a district snapshot that arrived must
+       not be thrown away because a token call did not. */
+    if (w) {
+      try { ch.balances = await balances(); } catch { /* keep the last one */ }
+    } else { ch.balances = null; }
     ch.at = performance.now();
     ch.everLive = true;
     ch.error = null;
