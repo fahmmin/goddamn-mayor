@@ -320,6 +320,23 @@ window.MM = window.MM || {};
     this.apply(max > 0 ? clamp(top / max, 0, 1) : 0);
   };
 
+  /* Ride to a normalised point on the line, 0..1.
+     Sets the scroll position rather than calling apply() directly, and that is
+     the whole point of it: apply() moves the camera and the ledger, but the
+     copy column is real scrolled content, so driving apply() alone flies the
+     camera to the marina while the words stay parked on scene one - fading to
+     nothing, because apply() dims every scene by its distance from the
+     current one. Move the scroll and apply() follows for free. */
+  Shell.prototype.rideTo = function (p) {
+    var max = this._scroll.scrollHeight - this._scroll.clientHeight;
+    if (max <= 0) { this.apply(0); return; }
+    this._touched = true;                  // this IS the reader scrolling
+    var y = clamp(p, 0, 1) * max;
+    if (this.lenis) this.lenis.scrollTo(y, { immediate: true });
+    else this._scroll.scrollTop = y;
+    this.apply(clamp(p, 0, 1));
+  };
+
   Shell.prototype.scrollTo = function (i) {
     var y = i * this._scroll.clientHeight;
     if (this.lenis) this.lenis.scrollTo(y);
@@ -475,9 +492,15 @@ window.MM = window.MM || {};
     })();
   };
 
-  /* Door two. No wallet, no email, no choice to make - the city that is
-     already loaded, entered. Phase 7 attaches the guided tour here. */
-  Shell.prototype.startDemo = function () { this.play(); };
+  /* Door two. No wallet, no email, no choice to make.
+     The tour drives the ride itself from here, so this does NOT call play() -
+     the 'enter' beat does, a minute and a half in, after the camera has been
+     down the line. Without a tour module it degrades to what it was: the
+     loaded city, entered. */
+  Shell.prototype.startDemo = function () {
+    if (MM.tour && MM.tour.start) { MM.tour.start(); return; }
+    this.play();
+  };
 
   /* Chosen from the fork. newGame mutates the live state in place, because
      game.js closes over it - see src/demo.js. */

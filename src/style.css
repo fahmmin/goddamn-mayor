@@ -222,6 +222,38 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 /* ---------- bottom dock ---------- */
 .mm-dock { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 8px; align-items: center; }
 
+/* ---- the tour caption ----
+   One line at the bottom of the screen and a way out of it. Deliberately not
+   a modal: the tour drives the real game underneath, and anything that dimmed
+   or blocked it would be hiding the only thing worth looking at. */
+.mm-tour {
+  position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%);
+  z-index: 30; pointer-events: auto;
+  display: flex; align-items: center; gap: 14px;
+  max-width: min(680px, 92vw); padding: 11px 13px 11px 19px;
+  border-radius: 999px; background: rgba(16, 22, 26, .9);
+  border: 1px solid rgba(255, 255, 255, .14);
+  box-shadow: 0 14px 44px rgba(0, 0, 0, .45);
+  opacity: 0; transition: opacity .4s ease;
+}
+.mm-tour.on { opacity: 1; }
+.tr-say {
+  font-family: var(--obs-serif, Georgia, serif); font-size: 15.5px;
+  color: #fff; line-height: 1.35;
+}
+.tr-skip {
+  flex: none; font-family: var(--ui); font-size: 11px; letter-spacing: 1.4px;
+  text-transform: uppercase; color: rgba(255, 255, 255, .72);
+  border: 1px solid rgba(255, 255, 255, .24); border-radius: 999px;
+  padding: 7px 13px; transition: color .2s, background .2s;
+}
+.tr-skip:hover { color: #fff; background: rgba(255, 255, 255, .14); }
+@media (max-width: 720px) {
+  .mm-tour { bottom: 14px; padding: 9px 10px 9px 15px; gap: 10px; }
+  .tr-say { font-size: 13.5px; }
+}
+@media (prefers-reduced-motion: reduce) { .mm-tour { transition: none; } }
+
 /* ---- the chapter card ----
    Bottom-left, above the dock. The whole brief for this element was "good
    gamification, not overstimulating", so it is one card, it never animates on
