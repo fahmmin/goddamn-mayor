@@ -42,6 +42,7 @@
   <script src="src/roofs.js"></script>
   <script src="src/props.js"></script>
   <script src="src/lots.js"></script>
+  <script src="src/ens.js"></script>
   <script src="src/light.js"></script>
   <script src="src/bridges.js"></script>
   <script src="src/landmarks.js"></script>
@@ -50,8 +51,11 @@
   <script src="src/ui.js"></script>
   <script src="src/demo.js"></script>
   <script src="src/game.js"></script>
+  <!-- The inspector loads after game.js for the same reason shell.js does:
+       it drives MM.renderer, which game.js creates. It never edits it. -->
+  <script src="src/inspect.js"></script>
   <!-- Lenis, vendored rather than fetched: a local file keeps CSP at
-       default-src 'self', works offline and works inside Electron. The shell
+       default-src 'self', works offline and needs no build step. The shell
        falls back to native scroll if this tag is removed. -->
   <script src="vendor/lenis.min.js"></script>
   <!-- The shell loads after game.js because it drives MM.state and

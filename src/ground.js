@@ -119,6 +119,7 @@ window.MM = window.MM || {};
     /* asphalt */
     ctx.fillStyle = c.asphalt;
     ctx.beginPath(); tile(ctx, o); ctx.fill();
+    if (MM.materials && sc >= .65) MM.materials.surface(ctx, 1, sc, sc * .5, -sc, sc * .5, o.cx, o.cy);
 
     /* every side without a road neighbour gets a dark gutter and a pale kerb,
        so a run of road reads as a raised strip between blocks */
@@ -250,6 +251,7 @@ window.MM = window.MM || {};
     var gi = (hash(x, y, 3) * 6) | 0;
     ctx.fillStyle = c.grass[gi];
     ctx.beginPath(); tile(ctx, o); ctx.fill();
+    if (MM.materials && sc >= .65) MM.materials.surface(ctx, 1, sc, sc * .5, -sc, sc * .5, o.cx, o.cy);
     if (sc < 0.7) return;
 
     var du = (hash(x, y, 5) - 0.5) * 0.9, dvv = (hash(x, y, 6) - 0.5) * 0.9;

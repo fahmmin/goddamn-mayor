@@ -3,7 +3,8 @@
    A landmark is the one building on the map that is allowed to break the
    height rules, so it does not belong in the lots.js archetype table with the
    offices and the brownstones. lots.js hands a lot here when its archetype is
-   'hero'; everything below draws on the public MM.gfx API with its own frame,
+   a landmark archetype; everything below draws on the public MM.gfx API with
+   its own frame,
    so none of lots.js's private drawing state is needed.
 
    Placement is by MM.lots.pin, the same mechanism the airport, stadium and
@@ -166,10 +167,189 @@ window.MM = window.MM || {};
     }
   }
 
-  var ARCH = { hero: tower };
+  /* ------------------------------------------------------------------ *
+   * more wonders
+   *
+   * Each one gets the same frame the tower does and draws through the same
+   * public gfx kit, so adding one is adding a function and a name - no new
+   * private state, and nothing in lots.js to teach.
+   * ------------------------------------------------------------------ */
+
+  /* the paved ground a monument stands on, inset from the lot edge */
+  function plinth (ctx, F, col, inset) {
+    inset = inset === undefined ? 0.12 : inset;
+    var b = G.buf2, n = G.rectPts(b, F.u0 + inset, F.v0 + inset, F.u1 - inset, F.v1 - inset);
+    G.slab(ctx, F.cx, F.cy, F.fx, F.fy, b, n, 0, css(col));
+  }
+
+  /* A disc lying in a wall plane - clock faces, rose windows. gfx has no
+     helper for this because nothing else needs one: a circle on a vertical
+     face projects to a sheared ellipse, and walking it as a polygon in
+     (u, v, h) lets the shared projection do that shear for free.
+     side 0 = the v = fixed face, side 1 = the u = fixed face. */
+  function wallDisc (ctx, F, side, fixed, a, h, r, rp, col, seg) {
+    var k, th, aa, hh;
+    ctx.fillStyle = css(col);
+    ctx.beginPath();
+    for (k = 0; k < seg; k++) {
+      th = k / seg * Math.PI * 2;
+      aa = a + Math.cos(th) * r; hh = h + Math.sin(th) * rp;
+      if (side === 0) (k ? G.lineTo : G.moveTo)(ctx, F.cx, F.cy, F.fx, F.fy, aa, fixed, hh);
+      else (k ? G.lineTo : G.moveTo)(ctx, F.cx, F.cy, F.fx, F.fy, fixed, aa, hh);
+    }
+    ctx.closePath(); ctx.fill();
+  }
+
+  /* ---- the great pyramid ---------------------------------------------
+     A true smooth-sided pyramid needs a frustum, and gfx extrudes prisms.
+     Stepping it is not a workaround: the mastaba courses are what make the
+     thing read as cut stone at forty pixels rather than as a grey cone. */
+  function pyramid (ctx, F) {
+    var n = F.sc > 0.6 ? 14 : 8, i, t0, t1, r, col = PAL.sand;
+    var base = F.span * 0.46, t = F.top;
+    plinth(ctx, F, PAL.dirt, 0.08);
+    for (i = 0; i < n; i++) {
+      t0 = i / n; t1 = (i + 1) / n;
+      r = base * (1 - t0 * 0.95);
+      // overlap into the course above, or the steps show a hairline of sky
+      G.prism(ctx, F.cx, F.cy, F.fx, F.fy, F.cu - r, F.cv - r, F.cu + r, F.cv + r,
+        t * t0, t * t1 + t / n * 0.3, faces(i & 1 ? col : mul(col, 0.965)));
+    }
+    // the capstone catches the sun the rest of the limestone has lost
+    r = base * 0.06;
+    G.prism(ctx, F.cx, F.cy, F.fx, F.fy, F.cu - r, F.cv - r, F.cu + r, F.cv + r,
+      t * 0.98, t * 1.03, faces(mix(PAL.sand, PAL.white, 0.5)));
+  }
+
+  /* ---- the triumphal arch --------------------------------------------
+     Two piers and an attic. The opening is the gap between the piers, not a
+     hole cut in a wall - at this scale you would never see through a hole,
+     and two solids read as an arch where one solid with a notch does not. */
+  function arcde (ctx, F) {
+    var sp = F.span, t = F.top, cu = F.cu, cv = F.cv;
+    var pw = sp * 0.13, gap = sp * 0.21, hP = t * 0.74;
+    var stone = PAL.bone, trim = mul(PAL.sand, 0.98);
+    plinth(ctx, F, PAL.plaza, 0.10);
+    // far pier first: inside one lot there is no diagonal sweep to order them
+    var k, cvv;
+    for (k = 0; k < 2; k++) {
+      cvv = cv + (k ? gap : -gap);
+      G.prism(ctx, F.cx, F.cy, F.fx, F.fy, cu - pw, cvv - pw, cu + pw, cvv + pw,
+        0, hP, faces(stone));
+      // cornice band, so the piers do not read as two plain posts
+      G.prism(ctx, F.cx, F.cy, F.fx, F.fy, cu - pw * 1.18, cvv - pw * 1.18,
+        cu + pw * 1.18, cvv + pw * 1.18, hP * 0.93, hP, faces(trim));
+    }
+    // the attic spans both piers and is what turns them into one monument
+    G.prism(ctx, F.cx, F.cy, F.fx, F.fy, cu - pw * 1.1, cv - gap - pw * 1.1,
+      cu + pw * 1.1, cv + gap + pw * 1.1, hP, t * 0.95, faces(stone));
+    G.prism(ctx, F.cx, F.cy, F.fx, F.fy, cu - pw * 1.25, cv - gap - pw * 1.25,
+      cu + pw * 1.25, cv + gap + pw * 1.25, t * 0.95, t, faces(trim));
+    // No vault disc: the gap between the piers already is the opening, and a
+    // disc drawn on the near pier just reads as a porthole punched in stone.
+  }
+
+  /* ---- the clock tower ------------------------------------------------ */
+  function clock (ctx, F) {
+    var sp = F.span, t = F.top, cu = F.cu, cv = F.cv, i;
+    var r = sp * 0.19, stone = mix(PAL.sand, PAL.stucco, 0.4);
+    var hS = t * 0.66, hB = t * 0.82;
+    plinth(ctx, F, PAL.plaza, 0.14);
+    /* The shaft, as courses of one single width. A band set proud of the shaft
+       shows its own top face, and in this projection a top face is the lit
+       one - so every course came out a bright diamond and the tower read as a
+       stack of shelves. The courses have to be colour, not relief. */
+    var courses = F.sc > 0.5 ? 8 : 4;
+    for (i = 0; i < courses; i++) {
+      G.prism(ctx, F.cx, F.cy, F.fx, F.fy, cu - r, cv - r, cu + r, cv + r,
+        hS * (i / courses), hS * ((i + 1) / courses) + 0.4,
+        faces(i & 1 ? mul(stone, 0.955) : stone));
+    }
+    // The clock, on both faces you can see. Two plain pale discs read as a
+    // pair of eyes, so each dial is small and sunk in a dark surround.
+    if (F.sc > 0.4) {
+      var cy2 = hS * 0.86, cr = r * 0.40, cp = F.st * 0.34;
+      wallDisc(ctx, F, 1, cu + r, cv, cy2, cr * 1.34, cp * 1.34, mul(stone, 0.62), 16);
+      wallDisc(ctx, F, 0, cv + r, cu, cy2, cr * 1.34, cp * 1.34, mul(stone, 0.58), 16);
+      wallDisc(ctx, F, 1, cu + r, cv, cy2, cr, cp, PAL.bone, 16);
+      wallDisc(ctx, F, 0, cv + r, cu, cy2, cr, cp, mul(PAL.bone, 0.96), 16);
+      wallDisc(ctx, F, 1, cu + r, cv, cy2, cr * 0.20, cp * 0.20, PAL.signDark, 8);
+      wallDisc(ctx, F, 0, cv + r, cu, cy2, cr * 0.20, cp * 0.20, PAL.signDark, 8);
+    }
+    // belfry, then the spire: a stack of shrinking courses to a finial
+    G.prism(ctx, F.cx, F.cy, F.fx, F.fy, cu - r * 1.12, cv - r * 1.12,
+      cu + r * 1.12, cv + r * 1.12, hS, hB, faces(mul(stone, 0.97)));
+    var n = F.sc > 0.6 ? 9 : 5, t0, t1, rr;
+    for (i = 0; i < n; i++) {
+      t0 = i / n; t1 = (i + 1) / n;
+      rr = r * 1.12 * (1 - t0 * 0.92);
+      G.prism(ctx, F.cx, F.cy, F.fx, F.fy, cu - rr, cv - rr, cu + rr, cv + rr,
+        hB + (t - hB) * t0, hB + (t - hB) * t1 + 0.4, faces(mul(PAL.teal, 0.86)));
+    }
+  }
+
+  /* ---- the pagoda -----------------------------------------------------
+     Five tiers, each a vermilion body under an eave that oversails it. The
+     oversail is the whole silhouette: bodies alone stack into a ziggurat. */
+  function pagoda (ctx, F) {
+    var sp = F.span, t = F.top, cu = F.cu, cv = F.cv, i;
+    var tiers = 5, body = [178, 72, 60], roof = mix(PAL.roofDark, PAL.teal, 0.30);
+    var b = G.buf2, n;
+    plinth(ctx, F, PAL.plaza, 0.12);
+    for (i = 0; i < tiers; i++) {
+      var t0 = i / tiers, t1 = (i + 1) / tiers;
+      var r = sp * 0.20 * (1 - t0 * 0.52);
+      var h0 = t * t0, h1 = t * (t0 + (t1 - t0) * 0.62);
+      G.prism(ctx, F.cx, F.cy, F.fx, F.fy, cu - r, cv - r, cu + r, cv + r,
+        h0, h1, faces(i & 1 ? body : mul(body, 1.06)));
+      // the eave: a chamfered slab with a lip, oversailing the body it covers
+      var e = r * 1.62;
+      n = G.chamfPts(b, cu - e, cv - e, cu + e, cv + e, e * 0.30);
+      G.extrude(ctx, F.cx, F.cy, F.fx, F.fy, b, n, h1, h1 + F.st * 0.16, roof, 1);
+      n = G.chamfPts(b, cu - e * 0.72, cv - e * 0.72, cu + e * 0.72, cv + e * 0.72, e * 0.22);
+      G.slab(ctx, F.cx, F.cy, F.fx, F.fy, b, n,
+        h1 + F.st * 0.30, css(mul(roof, 1.12)));
+    }
+    G.post(ctx, F.cx, F.cy, F.fx, F.fy, cu, cv, sp * 0.022,
+      t * 0.94, t * 1.10, faces(mix(PAL.signYel, PAL.sand, 0.35)));
+  }
+
+  /* ---- the arena ------------------------------------------------------
+     An outer drum of arcaded stone, the seating stepping down inside it, and
+     sand on the floor. Drawn outside in, so the near wall paints last and
+     you are looking into a bowl rather than at a ring. */
+  function arena (ctx, F) {
+    var sp = F.span, t = F.top, cu = F.cu, cv = F.cv, i;
+    var stone = mix(PAL.sand, PAL.concrete, 0.35);
+    var r = sp * 0.44, seg = F.sc > 0.6 ? 20 : 12;
+    plinth(ctx, F, PAL.plaza, 0.06);
+    G.drum(ctx, F.cx, F.cy, F.fx, F.fy, cu, cv, r, 0, t, stone, seg);
+    // two string courses mark the arcade tiers a real facade would have
+    for (i = 1; i < 3; i++) {
+      G.drum(ctx, F.cx, F.cy, F.fx, F.fy, cu, cv, r * 1.03,
+        t * (i / 3), t * (i / 3) + F.st * 0.10, mul(stone, 0.93), seg);
+    }
+    /* The bowl, as concentric drums each shorter than the last. gfx.drum caps
+       its top, so one outer wall on its own is a tub: what turns it into an
+       amphitheatre is the rings inside it, drawn after and stepping down, each
+       cap reading as a tier of seating. Sand last, at the bottom. */
+    var TIER = [[0.86, 0.80], [0.71, 0.60], [0.57, 0.40], [0.44, 0.22]];
+    for (i = 0; i < TIER.length; i++) {
+      G.drum(ctx, F.cx, F.cy, F.fx, F.fy, cu, cv, r * TIER[i][0], 0, t * TIER[i][1],
+        mul(stone, 0.94 - i * 0.045), seg);
+    }
+    G.drum(ctx, F.cx, F.cy, F.fx, F.fy, cu, cv, r * 0.34, 0, t * 0.10,
+      mix(PAL.sand, PAL.dirt, 0.45), seg);
+  }
+
+  var ARCH = {
+    hero: tower, pyramid: pyramid, arcde: arcde,
+    clock: clock, pagoda: pagoda, arena: arena
+  };
 
   /* ------------------------------------------------------------------ *
-   * entry point - called from lots.js draw() for a 'hero' lot
+   * entry point - called from lots.js draw() for any lot whose archetype
+   * this module claims
    * ------------------------------------------------------------------ */
 
   function draw (ctx, o, L, Q) {

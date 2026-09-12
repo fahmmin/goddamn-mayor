@@ -38,6 +38,8 @@ window.MM = window.MM || {};
     for (i = 0; i < PARA.length; i++) para.push(G.css(PARA[i]));
     C = {
       person: person, car: car, parasol: para,
+      // cafe furniture: dark pedestal, pale top, steel chair
+      cafe: [G.css(mul(PAL.steel, 0.55)), G.css(PAL.bone), G.css(mul(PAL.steel, 0.86))],
       trunk: G.css(PAL.trunk),
       // the ground shadow a tree throws; see tshadow()
       tshade: G.CAST ? 'rgba(34,42,70,0.37)' : 'rgba(0,0,0,0)',
@@ -198,6 +200,49 @@ window.MM = window.MM || {};
     ctx.ellipse(x + dx, y + dy, r + d, r * 0.60, SHA, 0, TAU);
   }
 
+  // Twelve small canopy sprites replace thousands of flat discs. Leaf clusters,
+  // crown shading and irregular silhouettes are paid for once per palette.
+  var crowns = [], crownKey = '';
+  function crown (variant, bucket) {
+    if (crownKey !== C.tbase.join('|')) { crowns = []; crownKey = C.tbase.join('|'); }
+    var id = variant * 3 + bucket;
+    if (crowns[id]) return crowns[id];
+    var img = document.createElement('canvas'); img.width = 96; img.height = 128;
+    var ctx = img.getContext('2d'), s = 52, x = 48, y = 116;
+    var rx = variant === 1 ? 16 : variant === 2 ? 24 : 26;
+    var ry = variant === 1 ? 30 : variant === 2 ? 12 : 25;
+    var yy = y - s * (variant === 1 ? 1.02 : variant === 2 ? .23 : .76);
+    ctx.beginPath();
+    if (variant === 3) {
+      for (var tier = 0; tier < 4; tier++) {
+        var w = 9 + tier * 6, ty = y - 65 + tier * 14;
+        ctx.moveTo(x, ty - 8);
+        for (var q = 0; q <= 6; q++) ctx.lineTo(x + w * q / 6, ty + 21 * q / 6 + hash(q, tier, 81) * 3);
+        for (q = 6; q >= 0; q--) ctx.lineTo(x - w * q / 6, ty + 21 * q / 6 + hash(q, tier, 84) * 3);
+        ctx.closePath();
+      }
+    } else {
+      for (var j = 0; j < 48; j++) {
+        var a = j / 48 * TAU, jitter = .89 + hash(j, id, 941) * .19;
+        var px = x + Math.cos(a) * rx * jitter, py = yy + Math.sin(a) * ry * jitter;
+        if (j) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+      }
+      ctx.closePath();
+    }
+    var g = ctx.createLinearGradient(x - rx, yy - ry, x + rx, yy + ry);
+    g.addColorStop(0, C.thi[bucket]); g.addColorStop(.40, C.tbase[bucket]); g.addColorStop(1, 'rgb(25,58,35)');
+    ctx.fillStyle = g; ctx.fill(); ctx.save(); ctx.clip();
+    for (j = 0; j < 70; j++) {
+      px = x + (hash(j, id, 950) * 2 - 1) * rx;
+      py = variant === 3 ? y - hash(j, id, 951) * 70 : yy + (hash(j, id, 951) * 2 - 1) * ry;
+      var r = 2.5 + hash(j, id, 952) * 6;
+      g = ctx.createRadialGradient(px - r * .4, py - r * .5, 0, px, py, r);
+      g.addColorStop(0, 'rgba(191,203,112,.40)'); g.addColorStop(.5, 'rgba(118,155,72,.12)'); g.addColorStop(1, 'rgba(17,51,27,.22)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py, r, 0, TAU); ctx.fill();
+    }
+    ctx.restore(); crowns[id] = img; return img;
+  }
+
   function tflush (ctx) {
     if (!TN) return;
     var i, open = 0, tw, th, pass, b;
@@ -212,6 +257,17 @@ window.MM = window.MM || {};
       ctx.closePath();
     }
     if (open) { ctx.fillStyle = C.trunk; ctx.fill(); }
+    if (!MM.visuals || MM.visuals.profile.detail) {
+      // Preserve the local painter order: nearby crowns cover distant crowns.
+      var order = [];
+      for (i = 0; i < TN; i++) order.push(i);
+      order.sort(function (a, b) { return TY[a] - TY[b]; });
+      for (var j = 0; j < TN; j++) {
+        i = order[j]; var z = TS[i] / 52;
+        ctx.drawImage(crown(TV[i], TB[i]), TX[i] - 48 * z, TY[i] - 116 * z, 96 * z, 128 * z);
+      }
+      TN = 0; return;
+    }
     for (pass = 0; pass < 2; pass++) {
       for (b = 0; b < 3; b++) {
         open = 0;
@@ -296,9 +352,9 @@ window.MM = window.MM || {};
     if (hash(o.x, o.y, 31) > 0.4) return;
     var e = pickEdge(o.mask, o, 33);
     if (e < 0) return;
-    var p = o.fx / 32, n = 2 + ((hash(o.x, o.y, 35) * 3) | 0), i, t, ci, F, iu, iv;
+    var p = o.fx / 32, n = 2 + ((hash(o.x, o.y, 35) * 3) | 0), i, t, ci;
     var along = (e < 2), off = (e === 1 || e === 3) ? -0.5 : 0.5;
-    var u0, v0, u1, v1, open = 0, cu, cv;
+    var cu, cv;
 
     // the whole row's shadows first, as one path, so they land under every
     // car in the row and not just the one that drew them
@@ -314,32 +370,33 @@ window.MM = window.MM || {};
     ctx.fill();
     }
 
+    // Kerbside cars use the same model as the traffic in render.js, so a car
+    // that parks does not change shape on the way to the kerb. A parked car
+    // noses along the kerb, i.e. across the edge it is parked on.
+    var P = G.carPaint();
     for (i = 0; i < n; i++) {
       t = (i - (n - 1) * 0.5) * 0.46;
-      if (along) { u0 = off - 0.20; u1 = off + 0.20; v0 = t - 0.21; v1 = t + 0.21; }
-      else { u0 = t - 0.21; u1 = t + 0.21; v0 = off - 0.20; v1 = off + 0.20; }
+      cu = along ? off : t; cv = along ? t : off;
       ci = (hash(o.x, o.y, 37 + i) * CARS.length) | 0;
-      F = C.car[ci];
-      prism(ctx, o.cx, o.cy, o.fx, o.fy, u0, v0, u1, v1, 1.0 * p, 6.0 * p, F);
-      if (!open) { ctx.beginPath(); open = 1; }      // glass band across the roofs
-      iu = (u1 - u0) * 0.24; iv = (v1 - v0) * 0.24;
-      G.moveTo(ctx, o.cx, o.cy, o.fx, o.fy, u0 + iu, v0 + iv, 6.0 * p);
-      G.lineTo(ctx, o.cx, o.cy, o.fx, o.fy, u1 - iu, v0 + iv, 6.0 * p);
-      G.lineTo(ctx, o.cx, o.cy, o.fx, o.fy, u1 - iu, v1 - iv, 6.0 * p);
-      G.lineTo(ctx, o.cx, o.cy, o.fx, o.fy, u0 + iu, v1 - iv, 6.0 * p);
-      ctx.closePath();
+      G.car(ctx, ix(o.cx, o.fx, cu, cv), iy(o.cy, o.fy, cu, cv, 0), o.fx, o.fy,
+        along ? 0 : 1, along ? 1 : 0,
+        G.VEH[hash(o.x, o.y, 53 + i) > 0.78 ? 'van' : 'sedan'],
+        P.paint[ci], P.glass[ci], P.tire, p);
     }
-    if (open) { ctx.fillStyle = C.glassD; ctx.fill(); }
   }
 
   /* ---- people -----------------------------------------------------------
      Static, hashed, ~5px tall. Bodies batch by clothing colour, heads all
      share bucket 8, so ten people cost at most nine fills. */
   function people (ctx, o) {
-    var n = Math.round((o.busy || 0) * (1.4 + o.level * 0.8) * 2.0);
-    if (o.kind === T.PARK) n += 2;
-    if (o.kind === T.ROAD && n > 2) n = 2;
-    if (n > 10) n = 10;
+    // Denser where the machine can afford it: eco keeps the old count, the
+    // detail profiles get a busier pavement. Heads all share one bucket, so
+    // the extra people cost fills only in proportion to the shirt colours.
+    var lush = !MM.visuals || MM.visuals.profile.detail;
+    var n = Math.round((o.busy || 0) * (1.4 + o.level * 0.8) * (lush ? 2.7 : 2.0));
+    if (o.kind === T.PARK) n += lush ? 3 : 2;
+    if (o.kind === T.ROAD && n > 3) n = 3;
+    if (n > (lush ? 13 : 10)) n = lush ? 13 : 10;
     if (n <= 0) return;
     var p = o.fx / 32, e = nearEdge(o.mask, o, 81), i, a, b, c, u, v, x, y;
     var pal = (hash(o.x, o.y, 82) * 8) | 0;   // 3 of the 8 shirt colours per tile
@@ -358,11 +415,38 @@ window.MM = window.MM || {};
     bflush(ctx, C.person);
   }
 
-  /* ---- cafe parasols ---------------------------------------------------- */
+  /* ---- cafe terrace: tables, chairs, parasols ---------------------------
+     A parasol on its own is a mushroom. The table and the ring of chairs
+     under it are what make the pavement read as a terrace, and they are
+     nearly free: the ellipse batcher is already running for the parasols,
+     so the whole set costs one extra flush however many covers there are.
+
+     Drawn in two passes because the batcher takes one colour table at a
+     time, and in this order because the canopy belongs over the furniture. */
+  function cafeSet (o, u, v, p, seed) {
+    var sq = o.fy / o.fx, i, a, tu, tv, x, y;
+    x = ix(o.cx, o.fx, u, v); y = iy(o.cy, o.fy, u, v, 0);
+    bpush(x, y - 1.6 * p, 0.42 * p, 1.6 * p, 0);                  // pedestal
+    bpush(x, y - 3.3 * p, 2.0 * p, 2.0 * p * sq, 1);              // table top
+    for (i = 0; i < 3; i++) {                                     // three covers
+      a = seed + i * 2.0944;
+      tu = u + Math.cos(a) * 0.155; tv = v + Math.sin(a) * 0.155;
+      x = ix(o.cx, o.fx, tu, tv); y = iy(o.cy, o.fy, tu, tv, 0);
+      bpush(x, y - 1.15 * p, 0.85 * p, 1.15 * p, 2);              // chair
+    }
+  }
+
   function parasols (ctx, o) {
     var p = o.fx / 32, n = 2 + ((hash(o.x, o.y, 55) * 3) | 0);
     var bu = hash(o.x, o.y, 56) * 0.8 - 0.4, bv = hash(o.x, o.y, 57) * 0.8 - 0.4;
     var sq = o.fy / o.fx, i, a, b, u, v, x, y, r;
+    // u and v are pure functions of the hash, so both passes recompute them
+    // rather than keeping a list - this runs on every cafe tile in view
+    for (i = 0; i < n; i++) {
+      a = hash(o.x, o.y, 60 + i * 2); b = hash(o.x, o.y, 61 + i * 2);
+      cafeSet(o, bu + a * 0.5 - 0.25, bv + b * 0.5 - 0.25, p, hash(o.x, o.y, 64 + i) * 6.28);
+    }
+    bflush(ctx, C.cafe);
     for (i = 0; i < n; i++) {
       a = hash(o.x, o.y, 60 + i * 2); b = hash(o.x, o.y, 61 + i * 2);
       u = bu + a * 0.5 - 0.25; v = bv + b * 0.5 - 0.25;

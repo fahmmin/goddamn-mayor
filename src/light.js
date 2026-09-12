@@ -284,7 +284,7 @@ window.MM = window.MM || {};
      render.js's _tint does the flat ambient multiply. This adds the part that
      has a direction to it: light pouring in from wherever the sun actually is. */
   function glow (ctx, R) {
-    var a = 0.10 * sun.day + 0.42 * sun.gold;
+    var a = 0.035 * sun.day + 0.25 * sun.gold;
     if (a < 0.015) return;
     var warm = mix(SUN_CORE, SUN_GOLD, clamp(1 - sun.elev * 1.2, 0, 1));
     var g = ctx.createRadialGradient(sun.sx, sun.sy, 0, sun.sx, sun.sy, sun.r * 1.6);
@@ -308,7 +308,7 @@ window.MM = window.MM || {};
      Live, not baked: it is keyed to the screen, not to the ground, so it has
      to survive a pan without the cache carrying yesterday's horizon. */
   function haze (ctx, R) {
-    var a = 0.17 * clamp(0.30 + sun.day * 0.85, 0, 1);
+    var a = 0.09 * clamp(0.30 + sun.day * 0.85, 0, 1);
     if (a < 0.01) return;
     var tone = skyTone(), h = R.h * 0.62;
     var g = ctx.createLinearGradient(0, 0, 0, h);
@@ -342,7 +342,7 @@ window.MM = window.MM || {};
 
   /* Is there anything in the additive wash at all? Through the middle of the
      night there is not, and an empty layer is a blit worth skipping. */
-  function glowAlpha () { return 0.10 * sun.day + 0.42 * sun.gold; }
+  function glowAlpha () { return 0.035 * sun.day + 0.25 * sun.gold; }
 
   MM.light = {
     sun: sun, update: update, skyTone: skyTone,

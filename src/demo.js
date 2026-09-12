@@ -30,8 +30,8 @@ window.MM = window.MM || {};
   'use strict';
 
   var q = (typeof location !== 'undefined' && location.search) || '';
-  var MODE = /[?&]diorama/.test(q) ? 'diorama'
-    : /[?&]play/.test(q) ? false
+  var MODE = /[?&]diorama(?:[=&]|$)/.test(q) ? 'diorama'
+    : /[?&]play(?:[=&]|$)/.test(q) ? false
     : MM.DEMO === undefined ? 'showcase' : MM.DEMO;
   var ON = MODE !== false;
 
@@ -59,7 +59,13 @@ window.MM = window.MM || {};
     [30, 37, 4, 4, 'port',     T.IND],
     [21, 41, 4, 4, 'power',    T.IND],
     [16, 41, 4, 4, 'solar',    T.IND],
-    [21, 21, 3, 3, 'hero',     T.PARK]   // the one thing allowed to break the height rules
+    [21, 21, 3, 3, 'hero',     T.PARK],  // the one thing allowed to break the height rules
+    /* the wonders, one to a district so none of them shares a skyline */
+    [31, 11, 4, 4, 'pyramid',  T.PARK],
+    [16, 16, 3, 3, 'arcde',    T.PARK],
+    [11, 16, 3, 3, 'clock',    T.PARK],
+    [26, 26, 4, 4, 'pagoda',   T.PARK],
+    [16, 26, 4, 4, 'arena',    T.PARK]
   ];
 
   /* whole blocks kept green, so downtown has somewhere to have lunch */

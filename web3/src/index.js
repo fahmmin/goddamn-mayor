@@ -209,6 +209,14 @@ async function boot () {
   cfg = await loadConfig();
   if (!cfg) return;                               // not configured; game plays on
 
+  /* Publish the deployment so src/ens.js can name the contract that would
+   * issue a given parcel's label without ever fetching anything itself. It is
+   * the addresses only - read-only, no client, no signer - and src/ still
+   * works with this undefined, which is what it is whenever the chain layer
+   * is absent. */
+  window.MM = window.MM || {};
+  window.MM.chainCfg = cfg;
+
   pub = createPublicClient({ chain: sepolia, transport: http(cfg.rpc) });
 
   /* game.js sets MM.state during its own boot, which may land after this

@@ -1,6 +1,6 @@
 /* Headless integration smoke test.
    Evals every module in load order against a minimal fake DOM, then runs the
-   simulation hard. Catches cross-module breakage without launching Electron.
+   simulation hard. Catches cross-module breakage without opening a browser.
    Run: node smoke.js                                                        */
 'use strict';
 const fs = require('fs');
@@ -95,7 +95,7 @@ global.AudioContext = undefined;   // audio must degrade to silence
 
 // --- load modules in index.html order --------------------------------------
 const ORDER = ['state.js', 'districts.js', 'gfx.js', 'materials.js', 'audio.js', 'policies.js', 'events.js', 'sim.js',
-  'ground.js', 'roofs.js', 'props.js', 'lots.js', 'light.js', 'bridges.js', 'landmarks.js', 'sky.js', 'render.js', 'ui.js', 'demo.js', 'shell.js'];
+  'ground.js', 'roofs.js', 'props.js', 'lots.js', 'ens.js', 'light.js', 'bridges.js', 'landmarks.js', 'sky.js', 'render.js', 'ui.js', 'demo.js', 'inspect.js', 'shell.js'];
 // demo.js shadows loadState/saveState/sim.step when showcase mode is on. The
 // harness wants the real ones, so opt out before it loads and test its plan
 // through MM.buildDemoCity instead.

@@ -9,6 +9,9 @@ window.MM = window.MM || {};
   const TILE = {
     EMPTY: 0, WATER: 1, ROAD: 2, RES: 3, COM: 4, IND: 5, PARK: 6,
     BUS: 7, GROCERY: 8, CHILDCARE: 9, CLINIC: 10, SCHOOL: 11, TOWER: 12,
+    // Appended, never renumbered: a saved grid is raw tile ids, so the only
+    // safe way to add a tile is on the end. Old saves simply contain none.
+    RAIL: 13, STATION: 14,
     BULLDOZE: 99
   };
 
@@ -25,14 +28,17 @@ window.MM = window.MM || {};
     [TILE.CLINIC]:    { name: 'Public Clinic',  cost: 680, upkeep: 14.0, key: '9', hue: 0,   glyph: 'H' },
     [TILE.SCHOOL]:    { name: 'Public School',  cost: 600, upkeep: 12.0, key: 's', hue: 50,  glyph: 'S' },
     [TILE.TOWER]:     { name: 'Social Housing', cost: 900, upkeep: 16.0, key: 't', hue: 175, glyph: 'M' },
+    [TILE.RAIL]:      { name: 'Rail Track',      cost: 45,  upkeep: 0.9,  key: 'r', hue: 265, glyph: '#' },
+    [TILE.STATION]:   { name: 'Rail Station',    cost: 1100, upkeep: 20.0, key: 'e', hue: 265, glyph: 'E' },
     [TILE.BULLDOZE]:  { name: 'Bulldoze',       cost: 4,   upkeep: 0,    key: '0', hue: 0,   glyph: 'X' }
   };
 
-  const BUILDABLE = [TILE.ROAD, TILE.RES, TILE.COM, TILE.IND, TILE.PARK, TILE.BUS,
-    TILE.GROCERY, TILE.CHILDCARE, TILE.CLINIC, TILE.SCHOOL, TILE.TOWER, TILE.BULLDOZE];
+  const BUILDABLE = [TILE.ROAD, TILE.RAIL, TILE.STATION, TILE.RES, TILE.COM, TILE.IND,
+    TILE.PARK, TILE.BUS, TILE.GROCERY, TILE.CHILDCARE, TILE.CLINIC, TILE.SCHOOL,
+    TILE.TOWER, TILE.BULLDOZE];
 
   const ZONES = [TILE.RES, TILE.COM, TILE.IND];
-  const SERVICES = [TILE.BUS, TILE.GROCERY, TILE.CHILDCARE, TILE.CLINIC, TILE.SCHOOL, TILE.PARK];
+  const SERVICES = [TILE.BUS, TILE.STATION, TILE.GROCERY, TILE.CHILDCARE, TILE.CLINIC, TILE.SCHOOL, TILE.PARK];
 
   const idx = (x, y) => y * GRID + x;
   const inBounds = (x, y) => x >= 0 && y >= 0 && x < GRID && y < GRID;

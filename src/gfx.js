@@ -18,6 +18,8 @@ window.MM = window.MM || {};
 
   function moveTo (ctx, cx, cy, fx, fy, u, v, h) { ctx.moveTo(ix(cx, fx, u, v), iy(cy, fy, u, v, h)); }
   function lineTo (ctx, cx, cy, fx, fy, u, v, h) { ctx.lineTo(ix(cx, fx, u, v), iy(cy, fy, u, v, h)); }
+  var coverage = null;
+  function setCoverage (ctx) { coverage = ctx; }
 
   /* flat polygon on the ground plane (or at constant height h) */
   function flat (ctx, cx, cy, fx, fy, pts, h) {
@@ -31,7 +33,7 @@ window.MM = window.MM || {};
 
   /* axis-aligned box in tile space, from height hb up to ht.
      F = [topCss, leftCss, rightCss]. Draws only the faces a viewer can see. */
-  function prism (ctx, cx, cy, fx, fy, u0, v0, u1, v1, hb, ht, F) {
+  function prism (ctx, cx, cy, fx, fy, u0, v0, u1, v1, hb, ht, F, material) {
     // right face: the u = u1 edge
     ctx.fillStyle = F[2];
     ctx.beginPath();
@@ -40,6 +42,8 @@ window.MM = window.MM || {};
     lineTo(ctx, cx, cy, fx, fy, u1, v1, hb);
     lineTo(ctx, cx, cy, fx, fy, u1, v0, hb);
     ctx.closePath(); ctx.fill();
+    if (MM.materials) MM.materials.wall(ctx, ix(cx, fx, u1, v0), iy(cy, fy, u1, v0, hb),
+      ix(cx, fx, u1, v1), iy(cy, fy, u1, v1, hb), ht - hb, fx / 32, material == null ? 1 : material);
     // left face: the v = v1 edge
     ctx.fillStyle = F[1];
     ctx.beginPath();
@@ -48,6 +52,8 @@ window.MM = window.MM || {};
     lineTo(ctx, cx, cy, fx, fy, u0, v1, hb);
     lineTo(ctx, cx, cy, fx, fy, u1, v1, hb);
     ctx.closePath(); ctx.fill();
+    if (MM.materials) MM.materials.wall(ctx, ix(cx, fx, u1, v1), iy(cy, fy, u1, v1, hb),
+      ix(cx, fx, u0, v1), iy(cy, fy, u0, v1, hb), ht - hb, fx / 32, material == null ? 1 : material);
     // top
     ctx.fillStyle = F[0];
     ctx.beginPath();
@@ -56,6 +62,17 @@ window.MM = window.MM || {};
     lineTo(ctx, cx, cy, fx, fy, u1, v1, ht);
     lineTo(ctx, cx, cy, fx, fy, u0, v1, ht);
     ctx.closePath(); ctx.fill();
+    if (coverage && ht > 5 * fx / 32) {
+      var g = coverage;
+      g.beginPath();
+      moveTo(g, cx, cy, fx, fy, u0, v0, ht);
+      lineTo(g, cx, cy, fx, fy, u1, v0, ht);
+      lineTo(g, cx, cy, fx, fy, u1, v0, hb);
+      lineTo(g, cx, cy, fx, fy, u1, v1, hb);
+      lineTo(g, cx, cy, fx, fy, u0, v1, hb);
+      lineTo(g, cx, cy, fx, fy, u0, v1, ht);
+      g.closePath(); g.fill();
+    }
   }
 
   /* upright cylinder-ish post (tank, silo, pole) */
@@ -90,7 +107,11 @@ window.MM = window.MM || {};
      render.js calls setLight() once a frame; css() then returns a colour
      with the current time-of-day applied, so every module matches. */
   var _rm = 1, _gm = 1, _bm = 1, _night = 0;
-  function setLight (rm, gm, bm, night) { _rm = rm; _gm = gm; _bm = bm; _night = night || 0; }
+  var _lightRev = 0;
+  function setLight (rm, gm, bm, night) {
+    if (rm !== _rm || gm !== _gm || bm !== _bm) _lightRev++;
+    _rm = rm; _gm = gm; _bm = bm; _night = night || 0;
+  }
   function css (c) {
     return 'rgb(' + (clamp(c[0] * _rm, 0, 255) | 0) + ',' +
       (clamp(c[1] * _gm, 0, 255) | 0) + ',' + (clamp(c[2] * _bm, 0, 255) | 0) + ')';
@@ -119,7 +140,7 @@ window.MM = window.MM || {};
      grazes the other. With the roof at 1.06 and the sunward wall at 1.08 the
      two came out the same value, which is what flattened a block into a
      silhouette - three faces, two tones. Keep them a clear step apart. */
-  var _su = 0.10, _sv = 1, _sgain = 0.26, _sroof = 0.15;
+  var _su = 0.10, _sv = 1, _sgain = 0.18, _sroof = 0.05;
   function setSun (u, v, gain, roof) {
     var m = Math.sqrt(u * u + v * v) || 1;
     _su = u / m; _sv = v / m;
@@ -181,43 +202,43 @@ window.MM = window.MM || {};
      Bright, saturated, model-village. Buildings are pale; the ground reads
      as dark asphalt and vivid lawn so the whole thing pops. */
   var PAL = {
-    grass:     [126, 186, 88],
-    grassDark: [ 98, 158, 68],
+    grass:     [116, 148, 72],
+    grassDark: [ 76, 109, 52],
     lot:       [176, 178, 168],
     lotEdge:   [150, 154, 146],
-    asphalt:   [ 74,  78,  84],
-    asphaltLo: [ 64,  68,  74],
+    asphalt:   [ 66,  70,  69],
+    asphaltLo: [ 49,  55,  53],
     curb:      [186, 188, 184],
     paint:     [244, 244, 238],
     paintYel:  [240, 198,  72],
     plaza:     [206, 202, 190],
-    waterA:    [ 74, 156, 200],
-    waterB:    [ 46, 122, 172],
-    treeA:     [ 74, 152,  76],
-    treeB:     [ 98, 182,  92],
-    treeC:     [ 56, 124,  64],
+    waterA:    [ 57, 120, 137],
+    waterB:    [ 34,  89, 111],
+    treeA:     [ 63, 111,  52],
+    treeB:     [ 94, 139,  61],
+    treeC:     [ 40,  88,  52],
     trunk:     [111,  84,  58],
     shade:     [ 30,  40,  52],
     concrete:  [222, 220, 212],
     concreteB: [200, 198, 190],
     steel:     [176, 182, 190],
-    glass:     [136, 198, 226],
-    glassDark: [ 92, 148, 182],
+    glass:     [106, 146, 156],
+    glassDark: [ 55,  88, 103],
     solar:     [ 44,  58,  92],
     solarLit:  [ 92, 130, 180],
     white:     [246, 246, 242],
     roofGrey:  [188, 190, 186],
     /* --- block-scale palette: materials the archetypes in lots.js use --- */
-    brickA:    [196, 126,  98],   brickB:    [172, 104,  86],
-    brickC:    [214, 168, 132],   stucco:    [238, 226, 206],
+    brickA:    [171, 119,  91],   brickB:    [145,  92,  72],
+    brickC:    [194, 156, 116],   stucco:    [224, 212, 185],
     sand:      [226, 208, 170],   bone:      [242, 240, 232],
     teal:      [ 96, 176, 176],   sage:      [166, 194, 158],
     terracot:  [212, 124,  86],   plum:      [150, 108, 148],
-    glassG:    [150, 200, 196],   glassB:    [124, 176, 214],
+    glassG:    [115, 157, 147],   glassB:    [ 93, 141, 163],
     mullion:   [206, 210, 212],   spandrel:  [ 92, 118, 138],
     metalA:    [206, 210, 214],   metalB:    [162, 168, 176],
     parkLot:   [ 86,  90,  96],   stall:     [232, 232, 224],
-    hedge:     [ 92, 148,  80],   planter:   [148, 116,  92],
+    hedge:     [ 69, 108,  51],   planter:   [148, 116,  92],
     courtB:    [ 74, 138, 190],   courtG:    [ 96, 158, 106],
     clay:      [198, 122,  92],   pond:      [ 92, 168, 202],
     signRed:   [230,  84,  62],   signOrg:   [242, 148,  52],
@@ -339,6 +360,18 @@ window.MM = window.MM || {};
       // A curve is many near-coplanar walls and antialiasing leaves hairlines
       // between them; a hard-edged box does not, and the stroke is not free.
       if (seam) { ctx.lineWidth = 0.7; ctx.stroke(); }
+      if (MM.materials) MM.materials.wall(ctx,
+        ix(cx, fx, b[e * 2], b[e * 2 + 1]), iy(cy, fy, b[e * 2], b[e * 2 + 1], hb),
+        ix(cx, fx, b[f * 2], b[f * 2 + 1]), iy(cy, fy, b[f * 2], b[f * 2 + 1], hb),
+        ht - hb, fx / 32, top[0] > top[2] * 1.2 && top[0] < 218 ? 0 : 1);
+      if (coverage && ht > 5 * fx / 32) {
+        coverage.beginPath();
+        moveTo(coverage, cx, cy, fx, fy, b[e * 2], b[e * 2 + 1], ht);
+        lineTo(coverage, cx, cy, fx, fy, b[f * 2], b[f * 2 + 1], ht);
+        lineTo(coverage, cx, cy, fx, fy, b[f * 2], b[f * 2 + 1], hb);
+        lineTo(coverage, cx, cy, fx, fy, b[e * 2], b[e * 2 + 1], hb);
+        coverage.closePath(); coverage.fill();
+      }
     }
     ctx.fillStyle = ctx.strokeStyle = css(mul(top, 1 + _sroof));
     ctx.beginPath();
@@ -347,6 +380,11 @@ window.MM = window.MM || {};
     ctx.closePath();
     ctx.fill();
     if (seam) { ctx.lineWidth = 0.7; ctx.stroke(); }
+    if (coverage && ht > 5 * fx / 32) {
+      coverage.beginPath(); moveTo(coverage, cx, cy, fx, fy, b[0], b[1], ht);
+      for (i = 1; i < n; i++) lineTo(coverage, cx, cy, fx, fy, b[i * 2], b[i * 2 + 1], ht);
+      coverage.closePath(); coverage.fill();
+    }
   }
 
   /* flat polygon fill at height h, footprint buffer form */
@@ -659,8 +697,92 @@ window.MM = window.MM || {};
     }
   }
 
+  /* ---- vehicles -------------------------------------------------------
+     A car is two boxes and a greenhouse: a long low chassis, a shorter cabin
+     set back from the nose, and that cabin's sides drawn in glass rather than
+     paint. The glass is what does the work - a single box in body colour
+     reads as a crate whatever you do to its proportions, and the moment the
+     upper half goes dark the same silhouette reads as a car seen from above.
+
+     Traffic only ever runs on the four cardinal directions, so both boxes are
+     axis aligned and prism() can do the shading. That is what keeps this
+     cheap enough for every vehicle on the map, every frame.
+
+     (au, av) is the heading in tile space - one of them is 0 and the other
+     +/-1. Plan dimensions are in the same half-tile (u,v) units the buildings
+     use; heights are in px at scale 1, so the caller scales by fx/32.
+
+     What makes or breaks it is the ratio: the cabin has to be clearly shorter
+     and narrower than the chassis, so that bonnet and boot both show. Sized
+     anywhere near the chassis it stops being a greenhouse and the pair read
+     as two slabs stacked on a kerb.                                         */
+  var VEH = {
+    /* halfLen  halfWid  sill  waist  roof  cabinBack  cabinNose  cabinInset */
+    sedan: [0.36, 0.160, 0.5, 4.8, 7.1, -0.23, 0.06, 0.046],
+    van:   [0.38, 0.175, 0.5, 4.6, 9.0, -0.30, 0.20, 0.030],
+    bus:   [0.56, 0.185, 0.6, 3.4, 9.8, -0.50, 0.49, 0.014],
+    // a rail car: longer than a bus, and almost all of it is glass
+    train: [0.62, 0.175, 1.4, 3.0, 10.4, -0.56, 0.56, 0.012]
+  };
+
+  /* The liveries, built once per light change and shared by the traffic in
+     render.js and the parked cars in props.js - so a given car is the same
+     car whether it happens to be moving. paint[i] is the body, glass[i] the
+     cabin: the body colour dragged most of the way to dark glass, which
+     keeps a red car's greenhouse faintly red instead of uniformly grey. */
+  var _vrev = -1, _paint = null, _glass = null, _tire = null;
+  function carPaint () {
+    if (_vrev !== _lightRev) {
+      _vrev = _lightRev;
+      _paint = []; _glass = [];
+      for (var i = 0; i < CARS.length; i++) {
+        _paint.push(faces(CARS[i]));
+        _glass.push(faces(mix(CARS[i], PAL.glassDark, 0.74)));
+      }
+      _tire = css(mul(PAL.shade, 1.25));
+    }
+    return { paint: _paint, glass: _glass, tire: _tire };
+  }
+
+  /* F is the body's faces() triple, Gl the cabin's (glass down the sides,
+     body colour on the roof); tire is a flat css colour, p = fx / 32. */
+  function car (ctx, cx, cy, fx, fy, au, av, K, F, Gl, tire, p) {
+    var hl = K[0], hw = K[1];
+    var sill = K[2] * p, waist = K[3] * p, roof = K[4] * p;
+    var along = au !== 0, s = along ? au : av;
+    var cb = K[5] * s, cn = K[6] * s;
+    var c0 = cb < cn ? cb : cn, c1 = cb < cn ? cn : cb;
+
+    /* the running gear: one dark pad under the body. Four separate wheels at
+       six pixels a car is four fills spent on two pixels of tyre. */
+    ctx.fillStyle = tire;
+    ctx.beginPath();
+    quad(ctx, cx, cy, fx, fy, along, -hl * 0.96, -hw * 0.82, hl * 0.96, hw * 0.82, sill);
+    ctx.fill();
+
+    vbox(ctx, cx, cy, fx, fy, along, -hl, hl, hw, sill, waist, F);
+    vbox(ctx, cx, cy, fx, fy, along, c0, c1, hw - K[7], waist, roof, Gl);
+  }
+
+  /* one axis-aligned quad in the vehicle's own frame, a = along, b = across */
+  function quad (ctx, cx, cy, fx, fy, along, a0, b0, a1, b1, h) {
+    var u0 = along ? a0 : b0, v0 = along ? b0 : a0;
+    var u1 = along ? a1 : b1, v1 = along ? b1 : a1;
+    moveTo(ctx, cx, cy, fx, fy, u0, v0, h);
+    lineTo(ctx, cx, cy, fx, fy, u1, v0, h);
+    lineTo(ctx, cx, cy, fx, fy, u1, v1, h);
+    lineTo(ctx, cx, cy, fx, fy, u0, v1, h);
+    ctx.closePath();
+  }
+
+  function vbox (ctx, cx, cy, fx, fy, along, a0, a1, hw, hb, ht, F) {
+    if (along) prism(ctx, cx, cy, fx, fy, a0, -hw, a1, hw, hb, ht, F, 0);
+    else prism(ctx, cx, cy, fx, fy, -hw, a0, hw, a1, hb, ht, F, 0);
+  }
+
   MM.gfx = {
     ix: ix, iy: iy, moveTo: moveTo, lineTo: lineTo, flat: flat,
+    car: car, VEH: VEH, carPaint: carPaint,
     prism: prism, post: post,
     rectPts: rectPts, chamfPts: chamfPts, elPts: elPts, ringPts: ringPts,
     bandPts: bandPts, arcTo: arcTo, buf: _pb, buf2: _pc,
@@ -669,7 +791,7 @@ window.MM = window.MM || {};
     text3D: text3D, textWall: textWall, textFlat: textFlat,
     glyphRects: glyphRects, textWidth: textWidth,
     hash: hash, clamp: clamp, lerp: lerp, mul: mul, mix: mix,
-    setLight: setLight, setSun: setSun, spec: spec, CAST: CAST, FL: FL,
+    setLight: setLight, setSun: setSun, setCoverage: setCoverage, spec: spec, CAST: CAST, FL: FL,
     css: css, cssA: cssA, raw: raw, faces: faces, night: night,
     PAL: PAL, CARS: CARS, LM: LM, RM: RM
   };

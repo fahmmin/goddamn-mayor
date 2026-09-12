@@ -67,6 +67,17 @@ window.MM = window.MM || {};
         svgEl('circle', { cx: p[0] - 3, cy: p[1] - 3, r: p[2] * .7, fill: '#79b66a' }, svg);
       }); return;
     }
+    if (tile === T.RAIL || tile === T.STATION) {
+      path('M8 44L40 27 65 41 34 59Z', '#8d8478');                    // ballast
+      ['M16 41l6-3 4 2-6 3', 'M27 35l6-3 4 2-6 3', 'M38 29l6-3 4 2-6 3'].forEach(function (d) {
+        path(d + 'Z', '#6b5946');                                     // sleepers
+      });
+      path('M13 43L44 26l3 2-31 17Z', '#c9ced4'); path('M19 47L50 30l3 2-31 17Z', '#c9ced4');
+      if (tile === T.RAIL) return;
+      path('M16 28L39 16l16 8-23 12Z', '#cfc4e4');                    // train shed
+      path('M16 28v11l16 8V36Z', '#9d8dc0'); path('M32 36l23-12v11L32 47Z', '#7a68a3');
+      path('M34 37l17-9v6l-17 9Z', '#dfe9f2'); return;
+    }
     if (tile === T.ROAD || tile === T.BUS || tile === T.BULLDOZE) {
       path('M8 44L40 27 65 41 34 59Z', '#667577'); path('M20 44l7-4 3 2-7 4m13-7 7-4 3 2-7 4', '#f2e4b1');
       if (tile === T.ROAD) return;
@@ -262,7 +273,7 @@ window.MM = window.MM || {};
     const groups = [
       { name: 'Zones', icon: 'city', tiles: [T.RES, T.COM, T.IND] },
       { name: 'Services', icon: 'hall', tiles: [T.SCHOOL, T.CLINIC, T.GROCERY, T.CHILDCARE, T.TOWER] },
-      { name: 'Transport', icon: 'road', tiles: [T.ROAD, T.BUS] },
+      { name: 'Transport', icon: 'road', tiles: [T.ROAD, T.BUS, T.RAIL, T.STATION] },
       { name: 'Parks', icon: 'park', tiles: [T.PARK] }
     ];
     this._groups = groups;
@@ -282,7 +293,7 @@ window.MM = window.MM || {};
       const b = el('button', 'tool' + (t === doze ? ' doze' : ''), t === doze ? box : grid);
       buildIcon(b, t);
       el('span', 'k', b, String(inf.key || '').toUpperCase());
-      const names = {}; names[T.GROCERY] = 'City grocery'; names[T.CLINIC] = 'Health clinic'; names[T.SCHOOL] = 'Public school'; names[T.TOWER] = 'Social housing'; names[T.BUS] = 'Bus stop';
+      const names = {}; names[T.GROCERY] = 'City grocery'; names[T.CLINIC] = 'Health clinic'; names[T.SCHOOL] = 'Public school'; names[T.TOWER] = 'Social housing'; names[T.BUS] = 'Bus stop'; names[T.RAIL] = 'Rail track'; names[T.STATION] = 'Rail station';
       el('span', 'tn', b, names[t] || inf.name);
       el('span', 'tc', b, '$' + NF.format(inf.cost || 0));
       b.title = inf.name + ' - $' + (inf.cost || 0) + (inf.upkeep ? ', $' + inf.upkeep + '/day upkeep' : '') + '  [' + inf.key + ']';

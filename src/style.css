@@ -877,3 +877,123 @@ body.obs-still .obs-hint { animation: none; }
   .obs-car, .obs-hint { animation: none; }
   #hud { transition: none; }
 }
+
+/* ================================================================== *
+ * the inspector - src/inspect.js
+ *
+ * Two surfaces. The tooltip is a name and one line of context, following
+ * the cursor; the panel is the full record, parked in the left column
+ * between the top bar and the dock, which is the only region of the HUD
+ * nothing else claims.
+ *
+ * Both are pointer-events:auto islands inside #hud, which is not - the
+ * canvas underneath has to keep receiving drags.
+ * ================================================================== */
+
+.ens-tip {
+  position: absolute; top: 0; left: 0; z-index: 40;
+  pointer-events: none;
+  max-width: min(420px, 72vw);
+  padding: 7px 11px 8px;
+  background: var(--glass);
+  border: 1px solid #fff;
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  opacity: 0; transition: opacity .10s ease;
+  will-change: transform;
+}
+.ens-tip.on { opacity: 1; }
+.ens-tip-name {
+  font-family: var(--mono); font-size: 12.5px; font-weight: 600;
+  color: var(--text); letter-spacing: .1px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.ens-tip-sub {
+  font-size: 10.5px; color: var(--dim); margin-top: 2px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+/* Colour carries the class of thing, so you learn what you are pointing at
+   before you finish reading the name. */
+.ens-tip[data-kind="parcel"] .ens-tip-name { color: var(--green); }
+.ens-tip[data-kind="person"] .ens-tip-name { color: var(--cyan); }
+.ens-tip[data-kind="cab"]    .ens-tip-name { color: var(--amber); }
+.ens-tip[data-kind="bus"]    .ens-tip-name { color: var(--violet); }
+
+.ens-panel {
+  position: absolute; left: 20px; top: 96px; width: 340px;
+  max-height: calc(100dvh - 232px);
+  display: none; flex-direction: column; overflow: hidden;
+  pointer-events: auto; z-index: 30;
+  background: var(--glass); border: 1px solid #fff;
+  border-radius: 17px; box-shadow: var(--shadow);
+}
+.ens-panel.on { display: flex; }
+
+.ens-head { position: relative; padding: 17px 44px 13px 19px; border-bottom: 1px solid var(--line); }
+.ens-kicker { font-size: 9px; letter-spacing: 1.8px; color: var(--dim); }
+.ens-title { margin: 3px 0 5px; font-size: 20px; font-weight: 650; letter-spacing: -.5px; }
+.ens-addr {
+  font-family: var(--mono); font-size: 11px; color: var(--green);
+  word-break: break-all; line-height: 1.35;
+}
+.ens-close {
+  position: absolute; top: 12px; right: 12px; width: 28px; height: 28px;
+  border-radius: 8px; font-size: 19px; line-height: 1; color: var(--dim);
+}
+.ens-close:hover { background: #e8efe3; color: var(--text); }
+
+.ens-body { padding: 4px 19px 18px; overflow-y: auto; }
+.ens-sec { padding-top: 14px; }
+.ens-sec h3 {
+  margin: 0 0 7px; font-size: 9px; letter-spacing: 1.6px;
+  color: var(--dim); font-weight: 600;
+}
+
+/* the namespace tree */
+.ens-tree { list-style: none; margin: 0; padding: 0; }
+.ens-tree li {
+  display: flex; align-items: baseline; gap: 6px;
+  padding: 3px 0; font-family: var(--mono); font-size: 11px;
+}
+.ens-depth { color: var(--line); width: 9px; flex: none; }
+.ens-label { color: var(--text2); word-break: break-all; flex: 1; }
+.ens-tree li.self .ens-label { color: var(--text); font-weight: 600; }
+.ens-tree li.self .ens-depth { color: var(--amber); }
+.ens-badge {
+  flex: none; font-family: var(--ui); font-size: 8px; letter-spacing: .8px;
+  padding: 2px 6px; border-radius: 999px;
+  background: var(--line2); color: var(--dim);
+}
+.ens-badge.live { background: #dceadf; color: var(--green); }
+
+/* fact tables */
+.ens-facts { display: grid; grid-template-columns: 104px 1fr; gap: 4px 10px; margin: 0; }
+.ens-facts dt { font-size: 11px; color: var(--dim); }
+.ens-facts dd { margin: 0; font-size: 11.5px; color: var(--text); word-break: break-word; }
+.ens-facts dd.mono { font-family: var(--mono); font-size: 10.5px; color: var(--text2); }
+
+/* the roll of people */
+.ens-roll { list-style: none; margin: 0; padding: 0; }
+.ens-roll li {
+  display: grid; grid-template-columns: 1fr auto; gap: 0 8px;
+  padding: 6px 0; border-bottom: 1px solid var(--line2);
+}
+.ens-roll li:last-child { border-bottom: 0; }
+.ens-who { font-size: 12px; font-weight: 600; }
+.ens-trade { font-size: 10.5px; color: var(--dim); text-align: right; align-self: center; }
+.ens-roll .ens-sub {
+  grid-column: 1 / -1; font-family: var(--mono); font-size: 10px;
+  color: var(--cyan); word-break: break-all;
+}
+.ens-more { margin: 9px 0 0; font-size: 10.5px; color: var(--dim); }
+.ens-note {
+  margin: 16px 0 0; font-size: 10.5px; line-height: 1.5; color: var(--dim);
+  padding-top: 12px; border-top: 1px solid var(--line2);
+}
+
+/* On a short or narrow window the record takes the whole left column and
+   the tooltip shrinks; neither may ever push the canvas around. */
+@media (max-width: 760px), (max-height: 620px) {
+  .ens-panel { left: 10px; right: 10px; width: auto; top: 84px; max-height: 58dvh; }
+  .ens-tip { max-width: 60vw; }
+}

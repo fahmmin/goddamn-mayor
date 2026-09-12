@@ -263,7 +263,8 @@ window.MM = window.MM || {};
   function pick (arr, k) { return arr[(R(k) * arr.length) | 0]; }
 
   function box (u0, v0, u1, v1, hb, ht, col) {
-    G.prism(Q.ctx, Q.cx, Q.cy, Q.fx, Q.fy, u0, v0, u1, v1, hb, ht, faces(col));
+    G.prism(Q.ctx, Q.cx, Q.cy, Q.fx, Q.fy, u0, v0, u1, v1, hb, ht, faces(col),
+      col[0] > col[2] * 1.2 && col[0] < 218 ? 0 : 1);
   }
   function boxF (u0, v0, u1, v1, hb, ht, F) {
     G.prism(Q.ctx, Q.cx, Q.cy, Q.fx, Q.fy, u0, v0, u1, v1, hb, ht, F);
@@ -286,6 +287,9 @@ window.MM = window.MM || {};
     if (!ctx) return;
     var b = G.buf2, n = G.rectPts(b, u0, v0, u1, v1);
     G.slab(ctx, Q.cx, Q.cy, Q.fx, Q.fy, b, n, h || 0, typeof col === 'string' ? col : css(col));
+    if (MM.materials && Q.sc >= .65 && (u1 - u0) * (v1 - v0) > .5) {
+      MM.materials.surface(ctx, 1, Q.sc, Q.sc * .5, -Q.sc, Q.sc * .5, Q.cx, Q.cy - (h || 0));
+    }
   }
   function padS (u0, v0, u1, v1, style, h) {
     var ctx = padTarget(h);
@@ -307,18 +311,51 @@ window.MM = window.MM || {};
   /* glazing on one wall plane; side 0 = the +v (left) face, 1 = +u (right) */
   function glaze (side, fixed, a0, a1, h0, h1, cols, rows, col) {
     var ctx = Q.ctx;
-    ctx.fillStyle = css(col || PAL.glass);
+    if (Q.sc >= .9 && (!MM.visuals || MM.visuals.profile.detail)) {
+      ctx.fillStyle = 'rgba(22,31,34,.32)'; ctx.beginPath();
+      G.winGrid(ctx, Q.cx, Q.cy, Q.fx, Q.fy, side, fixed, a0 - .025, a1 - .025, h0 + .8 * Q.sc, h1 + .8 * Q.sc, cols, rows);
+      ctx.fill();
+    }
+    ctx.fillStyle = glassShade(side, fixed, a0, a1, h0, h1, col || PAL.glass);
     ctx.beginPath();
     G.winGrid(ctx, Q.cx, Q.cy, Q.fx, Q.fy, side, fixed, a0, a1, h0, h1, cols, rows);
     ctx.fill();
+    glazingDetail(side);
+    // Rooms differ: a few blinds and unlit interiors break up a facade's
+    // uniform grid. Batched in one path, deterministic for every building.
+    if (Q.sc >= .9 && (!MM.visuals || MM.visuals.profile.detail)) {
+      var da = (a1 - a0) / cols, dh = (h1 - h0) / rows;
+      ctx.fillStyle = 'rgba(230,218,186,.48)'; ctx.beginPath();
+      for (var c = 0; c < cols; c++) for (var r = 0; r < rows; r++) {
+        var h = hash(Q.x, Q.y, 315 + c * 17 + r * 43 + side * 101);
+        if (h > .23) continue;
+        G.wallQuad(ctx, Q.cx, Q.cy, Q.fx, Q.fy, side, fixed,
+          a0 + (c + .22) * da, a0 + (c + .78) * da,
+          h0 + (r + .40 + h) * dh, h0 + (r + .76) * dh);
+      }
+      ctx.fill();
+    }
   }
   /* horizontal ribbon glazing - the modern-office read */
   function bands (side, fixed, a0, a1, h0, h1, n, col) {
     var ctx = Q.ctx;
-    ctx.fillStyle = css(col || PAL.glassB);
+    ctx.fillStyle = glassShade(side, fixed, a0, a1, h0, h1, col || PAL.glassB);
     ctx.beginPath();
     G.ribbon(ctx, Q.cx, Q.cy, Q.fx, Q.fy, side, fixed, a0, a1, h0, h1, n);
     ctx.fill();
+    glazingDetail(side);
+  }
+  function glazingDetail (side) {
+    if (MM.materials && Q.sc >= .7) MM.materials.surface(Q.ctx, 2, Q.sc, Q.sc * (side ? -.5 : .5), 0, Q.sc, Q.cx, Q.cy);
+  }
+  function glassShade (side, fixed, a0, a1, h0, h1, col) {
+    var g = Q.ctx.createLinearGradient(Q.cx - Q.fx, Q.cy - h1, Q.cx + Q.fx, Q.cy - h0);
+    g.addColorStop(0, css(mix(col, [206, 221, 211], side ? .12 : .32)));
+    g.addColorStop(.38, css(mul(col, side ? .76 : .98)));
+    g.addColorStop(.43, css(mix(col, PAL.white, .20)));
+    g.addColorStop(.49, css(mul(col, .82)));
+    g.addColorStop(1, css(mul(col, side ? .52 : .68)));
+    return g;
   }
   /* both street faces of a rectangular mass at once */
   function facade (u0, v0, u1, v1, h0, h1, n, col, mode) {
@@ -2501,7 +2538,7 @@ window.MM = window.MM || {};
     // landmarks.js owns the hero structures. It draws on the public gfx API
     // with its own frame, so it needs none of the Q state above - only the
     // lot box and the scale.
-    if (L.arch === 'hero' && MM.landmarks && MM.landmarks.draw) {
+    if (MM.landmarks && MM.landmarks.draw && MM.landmarks.ARCH[L.arch]) {
       try { MM.landmarks.draw(ctx, o, L, Q); } catch (e) {}
       return;
     }
@@ -2522,6 +2559,9 @@ window.MM = window.MM || {};
     strip: 2.2, atrium: 3.2, curve: 5.0, podium: 6.0, court: 3.0, mall: 2.4,
     campus: 3.0, rotunda: 4.0, row: 2.6, perim: 4.0, towers: 7.0,
     spire: 15.0, setback: 11.0, hero: 30.0,
+    // the wonders: each is a landmark archetype in landmarks.js, and the
+    // height it reads here is the same one it draws to
+    pyramid: 13.0, arcde: 9.0, clock: 14.0, pagoda: 12.0, arena: 5.5,
     shed: 2.0, plant: 3.4, yard: 1.2,
     green: 0.4, pond: 0.4, sport: 0.6, plaza: 0.5,
     airport: 2.6, stadium: 3.2, depot: 2.0, power: 4.2, solar: 0.8, wind: 5.0,

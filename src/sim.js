@@ -41,6 +41,7 @@ window.MM = window.MM || {};
     TAX_RES: 0.16, TAX_COM: 0.42, TAX_IND: 0.38,
     ROAD_CAP: 34,    // car trips a road tile absorbs per day
     BUS_CAP: 320,    // riders a bus stop absorbs per day
+    RAIL_CAP: 1450,  // ...and a rail station, if it is on the network
     COM_SHARE: 0.38, IND_SHARE: 0.26,            // jobs each sector owes per resident
 
     SERVE: { clinic: 1800, school: 1500, childcare: 1200, grocery: 1000 }
@@ -117,6 +118,23 @@ window.MM = window.MM || {};
     return probe[mid] > 0 ? 1000 / probe[mid] : 1;
   })();
 
+  /* How many stations actually sit on the rail network - a station needs a
+     track tile orthogonally adjacent to it to be worth any seats at all. */
+  function connectedStations (s) {
+    const G = MM.GRID, g = s.grid, T = MM.TILE;
+    let n = 0;
+    for (let y = 0; y < G; y++) {
+      for (let x = 0; x < G; x++) {
+        if (g[y * G + x] !== T.STATION) continue;
+        if ((x > 0 && g[y * G + x - 1] === T.RAIL) ||
+            (x < G - 1 && g[y * G + x + 1] === T.RAIL) ||
+            (y > 0 && g[(y - 1) * G + x] === T.RAIL) ||
+            (y < G - 1 && g[(y + 1) * G + x] === T.RAIL)) n++;
+      }
+    }
+    return n;
+  }
+
   function has (s, id) {
     try { return typeof MM.hasPolicy === 'function' && !!MM.hasPolicy(s, id); } catch (e) { return false; }
   }
@@ -166,19 +184,21 @@ window.MM = window.MM || {};
     const ef = effects(s);
 
     fA.fill(0); fB.fill(0); fR.fill(0); fT.fill(0); fN.fill(0);
-    const cnt = new Array(13).fill(0);
+    const cnt = new Array(16).fill(0);      // one slot per placeable tile id
 
     let housingCap = 0, towerCap = 0, comJobs = 0, indJobs = 0;
 
     for (let i = 0; i < N; i++) {
       const t = grid[i];
-      if (t < 13) cnt[t]++;
+      if (t < 16) cnt[t]++;
       const L = clamp(lvl[i] | 0, 0, 4);
       switch (t) {
         case T.WATER: fA[i] += 3; break;
         case T.ROAD: fR[i] = 1; fN[i] = 1; break;
         case T.PARK: fA[i] += 30; break;
         case T.BUS: fA[i] += 20; break;
+        case T.STATION: fA[i] += 32; break;    // a station lifts a neighbourhood
+        case T.RAIL: fB[i] += 4; break;        // and the track itself is a nuisance
         case T.GROCERY: fA[i] += 26; break;
         case T.CHILDCARE: fA[i] += 24; break;
         case T.CLINIC: fA[i] += 34; break;
@@ -215,7 +235,13 @@ window.MM = window.MM || {};
     // ---- 5. transit + traffic (uses yesterday's population; one day of lag)
     const commuters = Math.min(popNow * K.WORKFORCE, jobsOld);
     const busSeats = cnt[T.BUS] * K.BUS_CAP * (has(s, 'freeBuses') ? 1.75 : 1);
-    const riders = Math.min(commuters * 0.78, busSeats);
+    // A station with no track is a shed. Counting only connected stations is
+    // what makes laying the line matter instead of dotting stations about.
+    // ponytail: adjacency, not reachability - two stations on one rail stub
+    // both count. Flood-fill the network if lines ever need to be distinct.
+    const railSeats = connectedStations(s) * K.RAIL_CAP *
+      (has(s, 'freeBuses') ? 1.75 : 1);
+    const riders = Math.min(commuters * 0.78, busSeats + railSeats);
     const carShare = commuters > 0 ? Math.max(0, commuters - riders) / commuters : 0;
     s.tgt.ridership = Math.round(riders);
 
@@ -499,5 +525,9 @@ window.MM = window.MM || {};
     };
   }
 
-  MM.sim = { step: step, derive: derive };
+  /* K is exported so the parcel inspector can state a building's capacity
+     using the SAME table the simulation is running on, rather than a copy
+     that silently disagrees the first time one of these numbers is tuned.
+     Read-only by convention: nothing outside this file writes it. */
+  MM.sim = { step: step, derive: derive, K: K };
 })(window.MM);

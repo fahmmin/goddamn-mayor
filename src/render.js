@@ -47,6 +47,7 @@ window.MM = window.MM || {};
 
   var DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];   // d ^ 1 == reverse
   var DIRSCRATCH = [0, 0, 0, 0];
+  var RAILSCRATCH = [0, 0, 0, 0];
   var RING_R = [1.9, 1.05, 0.34], RING_A = [0.05, 0.08, 0.42];
 
   function inB (x, y) { return x >= 0 && y >= 0 && x < G && y < G; }
@@ -78,6 +79,11 @@ window.MM = window.MM || {};
     padB:     [198, 194, 184],
     curb:     [196, 198, 194],
     road:     [74, 78, 84],       // dark asphalt
+    ballast:  [132, 124, 112],    // crushed stone under the sleepers
+    sleeper:  [ 92,  74,  58],
+    rail:     [186, 190, 196],
+    railCar:  [206, 210, 214],    // stainless rolling stock
+
     dash:     [244, 244, 238],
     waterA:   [74, 156, 200],
     waterLit: [176, 226, 246],
@@ -135,6 +141,7 @@ window.MM = window.MM || {};
   FACE[T.CLINIC]    = box([248, 248, 246]);
   FACE[T.SCHOOL]    = box([240, 228, 200]);
   FACE[T.BUS]       = box([222, 230, 238]);
+  FACE[T.STATION]   = box([224, 216, 238]);
   FACE[T.PARK]      = box([116, 180, 84]);
   var FACE_DEF      = box([230, 230, 228]);
 
@@ -152,6 +159,7 @@ window.MM = window.MM || {};
   SHAPE[T.CLINIC]    = [1.55, 0.00, 0.66];
   SHAPE[T.SCHOOL]    = [1.35, 0.00, 0.70];
   SHAPE[T.BUS]       = [0.42, 0.00, 0.40];
+  SHAPE[T.STATION]   = [0.90, 0.00, 0.74];
   SHAPE[T.PARK]      = [0.00, 0.00, 0.90];
   var SHAPE_DEF      = [1.00, 0.25, 0.66];
 
@@ -185,11 +193,12 @@ window.MM = window.MM || {};
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d', { alpha: false });
 
-    this.scale = 1;
+    this.scale = 0.9;
     this.ox = 0; this.oy = 0;
     this.w = 1; this.h = 1; this.dpr = 1;
 
     this.hover = null;
+    this.pick = null;                        // src/inspect.js owns this
     this.overlay = 'none';
 
     this.clock = 0;          // animation clock (ms), advanced by dtMs
@@ -209,6 +218,7 @@ window.MM = window.MM || {};
     this._bPadA = new Int32Array(N); this._nPadA = 0;
     this._bPadB = new Int32Array(N); this._nPadB = 0;
     this._bRoad = new Int32Array(N); this._nRoad = 0;
+    this._bRail = new Int32Array(N); this._nRail = 0;
     this._bBld = new Int32Array(N); this._nBld = 0;
     this._bAll = new Int32Array(N); this._nAll = 0;
 
@@ -222,6 +232,11 @@ window.MM = window.MM || {};
 
     this._lit = null; this._litN = 0; this._litKey = '';
     this._veh = [];
+    /* Monotonic, never reused. An agent's id is its identity for as long as
+       it is in the city - including across the respawn that teleports it to
+       a fresh road when it runs out of street - which is the one property
+       src/ens.js needs to hand it a stable name. */
+    this._vid = 0;
     this._vhead = new Int32Array(2 * G);
     this._vnext = new Int32Array(MAX_V + MAX_P);
     this._lampBuf = new Float64Array(1600);
@@ -240,6 +255,7 @@ window.MM = window.MM || {};
     // the region the cache actually holds, in camera-independent screen units
     this._covL = 0; this._covR = 0; this._covT = 0; this._covB = 0;
     this._still = 0;                 // frames the camera has been at rest
+    this._settleMs = 0;
     this._kx = 0; this._ky = 0; this._kv = 0; this._kboost = 1;
     this._flx = 0; this._fly = 0;
     this._cacheRev = -1; this._look = null; this._lookPrev = null;
@@ -254,8 +270,71 @@ window.MM = window.MM || {};
     this._atmoKey = ''; this._addOn = false;
     this._lampSprite = null; this._lampKey = '';
 
+    this.buildMode = false;
+    this._bindNavigation();
+
     this.resize();
   }
+
+  // Exploration is the default. Capture only the gestures owned here, leaving
+  // the existing build/road-painting handlers intact when a tool is selected.
+  Renderer.prototype._bindNavigation = function () {
+    var self = this, drag = null, touches = new Map(), pinch = 0, touchMoved = false;
+    this.canvas.addEventListener('mousedown', function (e) {
+      if (self.buildMode || e.button !== 0) return;
+      self.stopPan(); drag = { x: e.clientX, y: e.clientY };
+      e.stopImmediatePropagation(); e.preventDefault();
+    }, true);
+    this.canvas.addEventListener('mousemove', function (e) {
+      if (!drag && self.buildMode) return;
+      if (drag) { self.panBy(e.clientX - drag.x, e.clientY - drag.y); drag.x = e.clientX; drag.y = e.clientY; }
+      self.hover = null;
+      if (drag) e.stopImmediatePropagation();
+    }, true);
+    window.addEventListener('mouseup', function () { drag = null; });
+    window.addEventListener('blur', function () { drag = null; touches.clear(); });
+    this.canvas.addEventListener('mouseleave', function () { drag = null; });
+    this.canvas.addEventListener('pointerdown', function (e) {
+      if (e.pointerType !== 'touch') return;
+      e.preventDefault(); self.stopPan();
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY });
+      if (self.canvas.setPointerCapture) self.canvas.setPointerCapture(e.pointerId);
+      if (touches.size === 1) touchMoved = false;
+      if (touches.size > 1) { touchMoved = true; var a = Array.from(touches.values()); pinch = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); }
+    }, { passive: false });
+    this.canvas.addEventListener('pointermove', function (e) {
+      var p = touches.get(e.pointerId); if (!p) return;
+      e.preventDefault();
+      var dx = e.clientX - p.x, dy = e.clientY - p.y;
+      p.x = e.clientX; p.y = e.clientY;
+      if (Math.hypot(p.x - p.startX, p.y - p.startY) > 6) touchMoved = true;
+      if (touches.size === 1) { if (touchMoved) self.panBy(dx, dy); }
+      else {
+        var a = Array.from(touches.values()), distance = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y);
+        if (distance > 0 && pinch > 0) {
+          var rect = self.canvas.getBoundingClientRect(), mx = (a[0].x + a[1].x) / 2 - rect.left, my = (a[0].y + a[1].y) / 2 - rect.top;
+          var old = self.scale; self.scale = clamp(old * distance / pinch, MIN_S, MAX_S);
+          self.ox = mx - (mx - self.ox) * self.scale / old; self.oy = my - (my - self.oy) * self.scale / old;
+        }
+        pinch = distance;
+      }
+    }, { passive: false });
+    function end (e) {
+      var p = touches.get(e.pointerId); if (!p) return;
+      // A tap places one tile; drags and pinches never spend city funds.
+      if (e.type !== 'pointercancel' && !touchMoved && self.buildMode && MM.state && MM.build && !MM.state.pending && !MM.state.gameOver) {
+        var t = self.screenToTile(e.clientX, e.clientY);
+        if (t) {
+          var result = MM.build(MM.state, t.x, t.y, MM.state.selected);
+          if (result.ok && MM.audio) MM.audio.play('place');
+          else if (result.msg && MM.ui) MM.ui.toast(result.msg, 'bad');
+        }
+      }
+      touches.delete(e.pointerId); pinch = 0;
+    }
+    this.canvas.addEventListener('pointerup', end);
+    this.canvas.addEventListener('pointercancel', end);
+  };
 
   /* ---------- viewport ---------------------------------------------- */
 
@@ -271,7 +350,9 @@ window.MM = window.MM || {};
       c.style.width = w + 'px';
       c.style.height = h + 'px';
     }
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var dpr = Math.min(window.devicePixelRatio || 1, MM.visuals ? MM.visuals.profile.dpr : 2);
+    // Rotation and browser resizing keep the same world point at the centre.
+    if (this.w > 1 && this.h > 1) { this.ox += (w - this.w) * .5; this.oy += (h - this.h) * .5; }
     this.w = w; this.h = h; this.dpr = dpr;
     c.width = Math.max(1, Math.round(w * dpr));
     c.height = Math.max(1, Math.round(h * dpr));
@@ -400,6 +481,64 @@ window.MM = window.MM || {};
     return inB(x, y) ? { x: x, y: y } : null;
   };
 
+  /* ---------- entity picking ------------------------------------------ *
+   *
+   * screenToTile answers "what GROUND is under the cursor". That is the wrong
+   * question for a city with height: point at the fortieth floor of a tower
+   * and the ground under your cursor is a block behind the building you are
+   * plainly looking at.
+   *
+   * The projection makes the right question cheap. cx depends only on x-y and
+   * cy only on x+y, so stepping one tile down the (+1,+1) diagonal moves a
+   * tile exactly 2*HH*scale px DOWN the screen and not one px sideways. A
+   * building k steps down that diagonal therefore stands under the cursor iff
+   * it is tall enough to reach back up: top*scale >= 2*k*HH*scale, i.e.
+   * top >= 32k, with the scale cancelling out entirely.
+   *
+   * Marching k from far to near and taking the first hit returns the frontmost
+   * candidate - which is precisely the one painter's order drew last, and so
+   * the one actually visible. No pick buffer, no second render pass, no id
+   * channel to keep in step with the art.
+   * ------------------------------------------------------------------- */
+
+  var PICK_K = 20;          // 20 * 32px of storey - taller than any archetype
+  var PICK_R = 11;          // px: how near the cursor a street agent counts as hit
+
+  Renderer.prototype.pickAt = function (s, px, py) {
+    if (!s) return null;
+    var r = this.canvas.getBoundingClientRect();
+    var lx = px - r.left, ly = py - r.top;
+
+    /* Street life first, and on screen distance rather than on tiles: a
+       pedestrian is three pixels of coat standing on a road the cursor is
+       also over, so any tile-based test would always lose to the road. */
+    var veh = this._veh, best = null, bestD = PICK_R * PICK_R;
+    for (var i = 0; i < veh.length; i++) {
+      var v = veh[i];
+      if (v.sx < -1000) continue;                 // not drawn this frame
+      var dx = v.sx - lx, dy = v.sy - ly, d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = v; }
+    }
+    if (best) return { kind: 'agent', agent: best, x: best.x | 0, y: best.y | 0 };
+
+    var t = this.screenToTile(px, py);
+    if (!t) return null;
+    if (MM.lots && MM.lots.lotOf && MM.lots.shape) {
+      for (var k = PICK_K; k >= 0; k--) {
+        var tx = t.x + k, ty = t.y + k;
+        if (!inB(tx, ty)) continue;
+        var L = MM.lots.lotOf(s, tx, ty);
+        if (!L) continue;
+        if (k > 0) {
+          var sh = MM.lots.shape(s, L.x1, L.y1);
+          if (!sh || sh.top < 2 * HH * k) continue;
+        }
+        return { kind: 'parcel', x: tx, y: ty, lot: L };
+      }
+    }
+    return { kind: 'tile', x: t.x, y: t.y };
+  };
+
   /* ---------- day / night -------------------------------------------- */
 
   Renderer.prototype._daynight = function (s, dt) {
@@ -423,7 +562,7 @@ window.MM = window.MM || {};
     // ponytail: static city light. If night colour is wanted back, cache the
     // city neutral and composite the tint onto a second canvas per light
     // bucket, rather than re-rendering 1900 tiles of detail.
-    this._rm = 1.02; this._gm = 1.01; this._bm = 1.00;
+    this._rm = 1.00; this._gm = 0.995; this._bm = 0.98;
 
     // hand the same light to gfx so ground.js / roofs.js / props.js match
     if (MM.gfx) MM.gfx.setLight(this._rm, this._gm, this._bm, this.N);
@@ -437,7 +576,7 @@ window.MM = window.MM || {};
     // specular up here: top, +v face, +u face. Keeps a one-tile clinic lit
     // the same way as the tower next door.
     var Gs = MM.gfx && MM.gfx.spec;
-    var SP = Gs ? [1 + 0.15, 1 + Gs(0, 1) / LM, 1 + Gs(1, 0) / RM] : [1, 1, 1];
+    var SP = Gs ? [1 + 0.05, 1 + Gs(0, 1) / LM, 1 + Gs(1, 0) / RM] : [1, 1, 1];
     // and the same warm-sun / cool-sky grading gfx.faces applies, so a civic
     // block one tile wide is lit like the tower next door
     var FL = (MM.gfx && MM.gfx.FL) || [[1, 1, 1], [1, 1, 1], [1, 1, 1]];
@@ -460,6 +599,14 @@ window.MM = window.MM || {};
       this._Fdef[f] = 'rgb(' + (clamp(c[0] * rm * SP[f] * FL[f][0], 0, 255) | 0) + ',' +
         (clamp(c[1] * gm * SP[f] * FL[f][1], 0, 255) | 0) + ',' +
         (clamp(c[2] * bm * SP[f] * FL[f][2], 0, 255) | 0) + ')';
+    }
+    // The two fleets that are not a random livery: the cab and the bus. Their
+    // colours live in this file's PAL, so gfx.carPaint cannot build them.
+    if (MM.gfx && MM.gfx.faces) {
+      var GD = MM.gfx.PAL.glassDark, mx = MM.gfx.mix;
+      this._vehF = [MM.gfx.faces(PAL.cab), MM.gfx.faces(PAL.bus), MM.gfx.faces(PAL.railCar)];
+      this._vehG = [MM.gfx.faces(mx(PAL.cab, GD, 0.74)), MM.gfx.faces(mx(PAL.bus, GD, 0.74)),
+        MM.gfx.faces(mx(PAL.railCar, GD, 0.80))];
     }
   };
 
@@ -489,9 +636,9 @@ window.MM = window.MM || {};
     var dMin = Math.max(0, Math.floor((y0 - shY - this.oy) / fy - 1.5));
     var dMax = Math.min(2 * G - 2, Math.ceil((y1 + hMax - this.oy) / fy + 1.5));
 
-    var nLot = 0, nWat = 0, nA = 0, nB = 0, nR = 0, nBld = 0, nAll = 0;
+    var nLot = 0, nWat = 0, nA = 0, nB = 0, nR = 0, nBld = 0, nAll = 0, nRl = 0;
     var bLot = this._bLot, bWat = this._bWat, bA = this._bPadA, bB = this._bPadB;
-    var bR = this._bRoad, bBld = this._bBld, bAll = this._bAll;
+    var bR = this._bRoad, bBld = this._bBld, bAll = this._bAll, bRl = this._bRail;
 
     // For a partial repaint, test each candidate against its own height
     // rather than the tallest building in the game. That is the difference
@@ -519,6 +666,9 @@ window.MM = window.MM || {};
         if (t === T.EMPTY) bLot[nLot++] = i;
         else if (t === T.WATER) bWat[nWat++] = i;
         else if (t === T.ROAD) { bR[nR++] = i; }
+        // Track is ground, not a structure: left in the building buckets it
+        // got a pad and a massing box and the line ran as a wall of sheds.
+        else if (t === T.RAIL) { bRl[nRl++] = i; }
         else {
           if (hash2(x, y) < 0.5) bA[nA++] = i; else bB[nB++] = i;
           bBld[nBld++] = i;
@@ -526,7 +676,7 @@ window.MM = window.MM || {};
       }
     }
     this._nLot = nLot; this._nWat = nWat; this._nPadA = nA; this._nPadB = nB;
-    this._nRoad = nR; this._nBld = nBld; this._nAll = nAll;
+    this._nRoad = nR; this._nBld = nBld; this._nAll = nAll; this._nRail = nRl;
   };
 
   Renderer.prototype._diamonds = function (list, n, color) {
@@ -724,6 +874,107 @@ window.MM = window.MM || {};
   };
 
   /* one road arm: a world-space ribbon from the tile centre to its edge */
+  /* Track links to track and to stations, never to a road. Rail crossing a
+     street is a level crossing, not a junction, so the two networks are laid
+     out by separate masks and simply overlap where they meet. */
+  Renderer.prototype._railLink = function (g, x, y) {
+    var m = 0;
+    for (var k = 0; k < 4; k++) {
+      var nx = x + DIRS[k][0], ny = y + DIRS[k][1];
+      if (!inB(nx, ny)) continue;
+      var t = g[ny * G + nx];
+      if (t === T.RAIL || t === T.STATION) m |= 1 << k;
+    }
+    return m;
+  };
+
+  /* Ballast, sleepers, rails - three passes, one path and one fill or stroke
+     each, so a line across the map costs three draws however long it is. An
+     isolated tile has no neighbour to take its bearing from, so it lies on
+     the x axis and reads as a stub of track rather than as a grey diamond. */
+  Renderer.prototype._railPass = function (s) {
+    var n = this._nRail;
+    if (!n) return;
+    var ctx = this.ctx, C = this._C, sc = this.scale;
+    var fx = HW * sc, fy = HH * sc, ox = this.ox, oy = this.oy, g = s.grid;
+    var W = 0.30, k, i, x, y, cx, cy, m, d, dx, dy, px, py, j, tt;
+
+    // The tile's own ground first. Rail is the one tile kind that is neither
+    // a lot, a road nor water, so nothing else lays a diamond under it - and
+    // the cache is cleared transparent, so the corners showed open sky.
+    ctx.fillStyle = C.lot;
+    ctx.beginPath();
+    for (k = 0; k < n; k++) {
+      i = this._bRail[k]; x = i % G; y = (i / G) | 0;
+      cx = (x - y) * fx + ox; cy = (x + y) * fy + oy;
+      ctx.moveTo(cx, cy - fy);
+      ctx.lineTo(cx + fx, cy);
+      ctx.lineTo(cx, cy + fy);
+      ctx.lineTo(cx - fx, cy);
+      ctx.closePath();
+    }
+    ctx.fill();
+
+    ctx.fillStyle = C.ballast;
+    ctx.beginPath();
+    for (k = 0; k < n; k++) {
+      i = this._bRail[k]; x = i % G; y = (i / G) | 0;
+      cx = (x - y) * fx + ox; cy = (x + y) * fy + oy;
+      m = this._railLink(g, x, y) || 3;              // a lone tile runs on x
+      ctx.moveTo(cx, cy - 2 * W * fy);
+      ctx.lineTo(cx + 2 * W * fx, cy);
+      ctx.lineTo(cx, cy + 2 * W * fy);
+      ctx.lineTo(cx - 2 * W * fx, cy);
+      ctx.closePath();
+      for (d = 0; d < 4; d++) {
+        if (m & (1 << d)) this._arm(cx, cy, fx, fy, DIRS[d][0], DIRS[d][1], W);
+      }
+    }
+    ctx.fill();
+
+    if (sc < 0.45) return;                           // below this it is a line
+
+    ctx.strokeStyle = C.sleeper;                     // sleepers, across the run
+    ctx.lineWidth = Math.max(0.6, 1.4 * sc);
+    ctx.beginPath();
+    for (k = 0; k < n; k++) {
+      i = this._bRail[k]; x = i % G; y = (i / G) | 0;
+      cx = (x - y) * fx + ox; cy = (x + y) * fy + oy;
+      m = this._railLink(g, x, y) || 3;
+      for (d = 0; d < 4; d++) {
+        if (!(m & (1 << d))) continue;
+        dx = DIRS[d][0]; dy = DIRS[d][1]; px = -dy; py = dx;
+        for (j = 1; j <= 2; j++) {
+          tt = j * 0.24;                             // along the half-arm
+          ctx.moveTo(cx + (dx * tt - dy * tt) * fx + (px - py) * fx * 0.20,
+            cy + (dx * tt + dy * tt) * fy + (px + py) * fy * 0.20);
+          ctx.lineTo(cx + (dx * tt - dy * tt) * fx - (px - py) * fx * 0.20,
+            cy + (dx * tt + dy * tt) * fy - (px + py) * fy * 0.20);
+        }
+      }
+    }
+    ctx.stroke();
+
+    ctx.strokeStyle = C.rail;                        // the two rails
+    ctx.lineWidth = Math.max(0.5, 0.85 * sc);
+    ctx.beginPath();
+    for (k = 0; k < n; k++) {
+      i = this._bRail[k]; x = i % G; y = (i / G) | 0;
+      cx = (x - y) * fx + ox; cy = (x + y) * fy + oy;
+      m = this._railLink(g, x, y) || 3;
+      for (d = 0; d < 4; d++) {
+        if (!(m & (1 << d))) continue;
+        dx = DIRS[d][0]; dy = DIRS[d][1]; px = -dy; py = dx;
+        for (j = -1; j <= 1; j += 2) {
+          var bx = (px - py) * fx * 0.12 * j, by = (px + py) * fy * 0.12 * j;
+          ctx.moveTo(cx + bx, cy + by);
+          ctx.lineTo(cx + (dx - dy) * fx * 0.5 + bx, cy + (dx + dy) * fy * 0.5 + by);
+        }
+      }
+    }
+    ctx.stroke();
+  };
+
   Renderer.prototype._arm = function (cx, cy, fx, fy, dx, dy, W) {
     var ctx = this.ctx;
     var px = -dy, py = dx;                       // world perpendicular
@@ -1401,6 +1652,24 @@ window.MM = window.MM || {};
       ctx.beginPath();
       ctx.arc(bx, by - 19 * sc, Math.max(1.6, 3 * sc), 0, TAU);
       ctx.fill();
+    } else if (t === T.STATION) {
+      // a long glazed concourse under a barrel canopy, plus the platform edge
+      ctx.fillStyle = 'rgba(' + HOT.winCool + ',' + (0.26 + 0.42 * night).toFixed(3) + ')';
+      ctx.beginPath();
+      this._fq(cx, cy, fx, fy, h, 0, 0.10, 0.90, 0.30, 0.92);
+      this._fq(cx, cy, fx, fy, h, 1, 0.10, 0.90, 0.30, 0.92);
+      ctx.fill();
+      this._roof(cx, cy, fx * 1.22, fy * 1.22, h, C.steel);
+      // the canopy ribs, so the roof reads as a train shed and not a lid
+      ctx.strokeStyle = C.pole;
+      ctx.lineWidth = Math.max(0.7, 1.1 * sc);
+      ctx.beginPath();
+      for (var ri = -1; ri <= 1; ri++) {
+        var rq = ri * 0.42;
+        ctx.moveTo(cx + (rq - 0.62) * fx, cy + (rq + 0.62) * fy - h);
+        ctx.lineTo(cx + (rq + 0.62) * fx, cy + (rq - 0.62) * fy - h);
+      }
+      ctx.stroke();
     }
   };
 
@@ -1507,7 +1776,32 @@ window.MM = window.MM || {};
     if (!m) return false;
     var d = this._pickDir(m, -1);
     v.x = x; v.y = y; v.d = d; v.dx = DIRS[d][0]; v.dy = DIRS[d][1]; v.t = rnd();
+    /* Where this one is FROM. A pedestrian hanging off a building rather than
+       off a district is what makes ada.1422-canal.downtown.cityhall.eth a true
+       statement instead of a decorative one, and the road they spawned on is
+       almost always kerbside to the block they live in. Resolved once, here,
+       because they walk - re-deriving it from wherever they have got to would
+       rename them mid-street. */
+    v.home = this._homeNear(s, x, y);
     return true;
+  };
+
+  /* The first lot touching this road tile, or {x:-1} if the road runs past
+     open land. lotOf() is a plan lookup behind a rev cache, so this is eight
+     array reads once per spawn.
+     Diagonals are included because a corner block is genuinely on the street
+     it faces: with orthogonals only, every agent spawning on a junction came
+     out belonging to nobody, and half the city walked around nameless above
+     district level. */
+  var HOME8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  Renderer.prototype._homeNear = function (s, x, y) {
+    if (!MM.lots || !MM.lots.lotOf) return { x: -1, y: -1 };
+    for (var k = 0; k < 8; k++) {
+      var nx = x + HOME8[k][0], ny = y + HOME8[k][1];
+      if (!inB(nx, ny)) continue;
+      if (MM.lots.lotOf(s, nx, ny)) return { x: nx, y: ny };
+    }
+    return { x: -1, y: -1 };
   };
 
   Renderer.prototype._traffic = function (s, dt) {
@@ -1515,20 +1809,25 @@ window.MM = window.MM || {};
     // The first wantV entries drive, the rest walk. Kind is derived from the
     // index every frame so a zoom that changes the pedestrian budget never
     // turns a walker into a taxi mid-street.
-    var wantV = Math.min(MAX_V, (this._nRoads * 0.32) | 0);
-    var wantP = this.scale < 0.55 ? 0 : Math.min(MAX_P, (this._nRoads * 0.55) | 0);
+    var profile = MM.visuals && MM.visuals.profile;
+    var wantV = Math.min(profile ? profile.vehicles : MAX_V, (this._nRoads * 0.32) | 0);
+    var wantP = this.scale < 0.55 ? 0 : Math.min(profile ? profile.people : MAX_P, (this._nRoads * 0.55) | 0);
     var want = wantV + wantP;
     while (veh.length > want) veh.pop();
     var guardSpawn = 0;
     while (veh.length < want && guardSpawn++ < 12) {
       var vk = (this._nBusT > 0 && rnd() < 0.18) ? 1 : 0;
       var nv = { x: 0, y: 0, dx: 1, dy: 0, d: 0, t: 0, kind: vk, vk: vk,
-        jit: 0.8 + rnd() * 0.45, lane: rnd() < 0.5 ? -1 : 1, tone: (rnd() * 6) | 0 };
+        jit: 0.8 + rnd() * 0.45, lane: rnd() < 0.5 ? -1 : 1, tone: (rnd() * 10) | 0,
+        id: ++this._vid, home: null, sx: -1e4, sy: -1e4 };
       if (!this._spawn(s, nv, vk === 1)) break;
       veh.push(nv);
     }
 
     var spd = 0.00115 * (1 - Math.min(0.72, (s.traffic || 0) / 140));
+    // Clear last frame's screen points up front: an agent that goes behind a
+    // tower this frame must stop being pickable this frame, not next.
+    for (var c = 0; c < veh.length; c++) { veh[c].sx = -1e4; veh[c].sy = -1e4; }
     var head = this._vhead;
     head.fill(-1);
     for (var k = 0; k < veh.length; k++) {
@@ -1553,6 +1852,140 @@ window.MM = window.MM || {};
     }
   };
 
+  /* ---------- trains ----------------------------------------------------
+     Rolling stock walks the rail graph the way traffic walks the road graph.
+     The difference is that a train is a consist, not a vehicle: the cars
+     behind the leader are placed by stepping back along the route it has
+     actually taken, so they follow it round a bend instead of sliding
+     through the corner on the diagonal.                                    */
+  var TRAIN_CARS = 3, TRAIN_GAP = 0.62, TRAIN_HIST = 10;
+
+  Renderer.prototype._trains = function (s, dt) {
+    var key = (s.rev | 0) + '|r';
+    if (key !== this._railKey) {                 // the network, on plan change
+      this._railKey = key;
+      var g = s.grid, net = [], i;
+      for (i = 0; i < g.length; i++) if (g[i] === T.RAIL) net.push(i);
+      this._railNet = net;
+      this._trn = [];
+    }
+    var net2 = this._railNet;
+    if (!net2 || net2.length < 4) { this._trn = []; return; }
+
+    var trn = this._trn || (this._trn = []);
+    var want = Math.min(4, Math.max(1, (net2.length / 18) | 0));
+    if (!MM.visuals || !MM.visuals.profile.detail) want = Math.min(want, 1);
+    while (trn.length > want) trn.pop();
+    var guard = 0;
+    while (trn.length < want && guard++ < 8) {
+      // deterministic seat on the network, so a reload puts them back
+      var seed = net2[((trn.length * 2654435761) >>> 0) % net2.length];
+      var t = { x: seed % G, y: (seed / G) | 0, dx: 1, dy: 0, t: 0,
+        hist: new Int16Array(TRAIN_HIST * 2), hn: 0,
+        jit: 0.85 + (trn.length % 3) * 0.12 };
+      t.d = this._railDir(s, t, -1);
+      if (t.d < 0) break;
+      t.dx = DIRS[t.d][0]; t.dy = DIRS[t.d][1];
+      trn.push(t);
+    }
+
+    var spd = 0.00085;
+    for (var k = 0; k < trn.length; k++) {
+      var v = trn[k];
+      v.t += spd * dt * v.jit;
+      var g2 = 0;
+      while (v.t >= 1 && g2++ < 4) {
+        v.t -= 1;
+        var nx = v.x + v.dx, ny = v.y + v.dy;
+        if (!inB(nx, ny) || (s.grid[ny * G + nx] !== T.RAIL && s.grid[ny * G + nx] !== T.STATION)) {
+          v.d ^= 1;                              // buffer stop: run back down
+          v.dx = DIRS[v.d][0]; v.dy = DIRS[v.d][1]; v.t = 0;
+          break;
+        }
+        // remember where it has been, newest first, before it leaves
+        for (var h = TRAIN_HIST - 1; h > 0; h--) {
+          v.hist[h * 2] = v.hist[h * 2 - 2]; v.hist[h * 2 + 1] = v.hist[h * 2 - 1];
+        }
+        v.hist[0] = v.x; v.hist[1] = v.y;
+        if (v.hn < TRAIN_HIST) v.hn++;
+        v.x = nx; v.y = ny;
+        var nd = this._railDir(s, v, v.d ^ 1);   // never double back at a junction
+        if (nd >= 0) { v.d = nd; v.dx = DIRS[nd][0]; v.dy = DIRS[nd][1]; }
+      }
+    }
+  };
+
+  /* A direction out of this tile along track, avoiding `banned` unless it is
+     the only way out - which is what makes a dead-end terminus work. */
+  Renderer.prototype._railDir = function (s, v, banned) {
+    var g = s.grid, opts = RAILSCRATCH, n = 0, k, nx, ny, t;
+    for (k = 0; k < 4; k++) {
+      if (k === banned) continue;
+      nx = v.x + DIRS[k][0]; ny = v.y + DIRS[k][1];
+      if (!inB(nx, ny)) continue;
+      t = g[ny * G + nx];
+      if (t === T.RAIL || t === T.STATION) opts[n++] = k;
+    }
+    if (!n) return banned >= 0 ? banned : -1;
+    if (n === 1) return opts[0];
+    // keep going straight where it can; a train that dithers at every
+    // junction reads as a shuttle rather than as a service
+    for (k = 0; k < n; k++) if (opts[k] === v.d) return v.d;
+    return opts[(hash3(v.x, v.y, 17) * n) | 0];
+  };
+
+  /* Where the consist is `back` tiles behind its leader, walked along the
+     route in the history buffer rather than straight back along the heading. */
+  var _tbx = 0, _tby = 0, _tdx = 1, _tdy = 0;
+  function trainPos (v, back) {
+    var px = v.x + v.dx * v.t, py = v.y + v.dy * v.t;
+    var d = back;
+    if (d <= v.t) {                              // still inside the current tile
+      _tbx = v.x + v.dx * (v.t - d); _tby = v.y + v.dy * (v.t - d);
+      _tdx = v.dx; _tdy = v.dy; return;
+    }
+    d -= v.t;
+    var ax = v.x, ay = v.y, h = 0;
+    while (h < v.hn) {
+      var bx = v.hist[h * 2], by = v.hist[h * 2 + 1];
+      if (d <= 1) {
+        _tbx = ax + (bx - ax) * d; _tby = ay + (by - ay) * d;
+        _tdx = ax - bx; _tdy = ay - by; return;
+      }
+      d -= 1; ax = bx; ay = by; h++;
+    }
+    _tbx = ax; _tby = ay; _tdx = v.dx; _tdy = v.dy;
+    if (px === ax && py === ay) { _tdx = v.dx; _tdy = v.dy; }
+  }
+
+  Renderer.prototype._drawTrainDiag = function (d) {
+    if (this._skipVeh) return;
+    var trn = this._trn;
+    if (!trn || !trn.length) return;
+    var ctx = this.ctx, sc = this.scale, Gg = MM.gfx;
+    if (!Gg || !Gg.car || !this._vehF || sc < 0.30) return;
+    var fx = HW * sc, fy = HH * sc, ox = this.ox, oy = this.oy, k, c;
+    var F = this._vehF[2], Gl = this._vehG[2];
+    for (k = 0; k < trn.length; k++) {
+      var v = trn[k];
+      var lx = v.x + v.dx * v.t, ly = v.y + v.dy * v.t;
+      if (((lx + ly) | 0) !== d) continue;       // one consist, one diagonal
+      for (c = 0; c < TRAIN_CARS; c++) {
+        trainPos(v, c * TRAIN_GAP);
+        var cx = (_tbx - _tby) * fx + ox, cy = (_tbx + _tby) * fy + oy;
+        if (cx < -40 || cx > this.w + 40 || cy < -40 || cy > this.h + 50) continue;
+        if (this._hiddenAt(cx, cy - 3 * sc)) continue;
+        // A car straddling a bend has a heading on both axes, and gfx.car is
+        // built for the four cardinals - so snap to the dominant one. A car
+        // with no history yet has no heading at all: take the leader's.
+        var hx = _tdx, hy = _tdy;
+        if (!hx && !hy) { hx = v.dx; hy = v.dy; }
+        if (hx) { hx = hx > 0 ? 1 : -1; hy = 0; } else { hy = hy > 0 ? 1 : -1; }
+        Gg.car(ctx, cx, cy, fx, fy, hx, hy, Gg.VEH.train, F, Gl, this._C.tire, sc);
+      }
+    }
+  };
+
   Renderer.prototype._drawVehDiag = function (d) {
     if (this._skipVeh) return;                 // static pass: traffic is drawn live
     var k = this._vhead[d];
@@ -1567,55 +2000,95 @@ window.MM = window.MM || {};
       var wx = v.x + v.dx * v.t - v.dy * lat;
       var wy = v.y + v.dy * v.t + v.dx * lat;
       var cx = (wx - wy) * fx + ox, cy = (wx + wy) * fy + oy;
+      if (this._hiddenAt(cx, cy - 2 * sc)) { k = this._vnext[k]; continue; }
+      /* Picking reads what was drawn, not what was simulated. Recording the
+         screen point here means anything behind a tower or off the edge never
+         got a position this frame and so cannot be hovered - the cursor and
+         the eye agree by construction, with no second projection to keep in
+         step with this one. */
       if (v.kind === 2) {
-        if (cx > -20 && cx < this.w + 20 && cy > -20 && cy < this.h + 30) this._person(cx, cy, v, sc, night);
+        if (cx > -20 && cx < this.w + 20 && cy > -20 && cy < this.h + 30) {
+          v.sx = cx; v.sy = cy - 3 * sc;
+          this._person(cx, cy, v, sc, night);
+        }
         k = this._vnext[k];
         continue;
       }
       if (cx > -30 && cx < this.w + 30 && cy > -30 && cy < this.h + 40) {
-        var hl = (v.kind ? 0.26 : 0.17), hw = v.kind ? 0.095 : 0.08;
+        v.sx = cx; v.sy = cy - (v.kind ? 4 : 3) * sc;
         var dx = v.dx, dy = v.dy, px = -dy, py = dx;
-        var axx = (dx - dy) * fx * hl, axy = (dx + dy) * fy * hl;
-        var bxx = (px - py) * fx * hw, bxy = (px + py) * fy * hw;
         var bh = (v.kind ? 6.4 : 4.2) * sc;
+        var Gg = MM.gfx;
+        // nose and tail, where the lamps go
+        var nl = v.kind ? 0.28 : 0.18;
+        var axx = (dx - dy) * fx * nl, axy = (dx + dy) * fy * nl;
 
-        ctx.fillStyle = C.tire;
-        ctx.beginPath();
-        ctx.moveTo(cx + axx + bxx, cy + axy + bxy);
-        ctx.lineTo(cx + axx - bxx, cy + axy - bxy);
-        ctx.lineTo(cx - axx - bxx, cy - axy - bxy);
-        ctx.lineTo(cx - axx + bxx, cy - axy + bxy);
-        ctx.fill();
+        if (Gg && Gg.car && this._vehF && sc > 0.5) {
+          // Close in, a real model: chassis, cabin, glass. The livery comes
+          // from gfx so a moving taxi and a parked one are the same yellow.
+          var P = Gg.carPaint(), li = v.tone % P.paint.length;
+          var fleet = v.kind ? 1 : ((v.tone & 3) === 0 ? 0 : -1);   // bus, cab, or private
+          var F = fleet < 0 ? P.paint[li] : this._vehF[fleet];
+          var Gl = fleet < 0 ? P.glass[li] : this._vehG[fleet];
+          Gg.car(ctx, cx, cy, fx, fy, dx, dy,
+            Gg.VEH[v.kind ? 'bus' : ((v.tone & 7) === 1 ? 'van' : 'sedan')],
+            F, Gl, C.tire, sc);
+        } else {
+          // Zoomed out a car is six pixels; three stacked quads is all of it
+          // that survives, and it is a third of the fills.
+          var hl = (v.kind ? 0.26 : 0.17), hw = v.kind ? 0.095 : 0.08;
+          var sxx = (dx - dy) * fx * hl, sxy = (dx + dy) * fy * hl;
+          var bxx = (px - py) * fx * hw, bxy = (px + py) * fy * hw;
+          ctx.fillStyle = C.tire;
+          ctx.beginPath();
+          ctx.moveTo(cx + sxx + bxx, cy + sxy + bxy);
+          ctx.lineTo(cx + sxx - bxx, cy + sxy - bxy);
+          ctx.lineTo(cx - sxx - bxx, cy - sxy - bxy);
+          ctx.lineTo(cx - sxx + bxx, cy - sxy + bxy);
+          ctx.fill();
 
-        ctx.fillStyle = v.kind ? C.bus : C.cab;
-        ctx.beginPath();
-        ctx.moveTo(cx + axx + bxx, cy + axy + bxy - bh * 0.55);
-        ctx.lineTo(cx + axx - bxx, cy + axy - bxy - bh * 0.55);
-        ctx.lineTo(cx - axx - bxx, cy - axy - bxy - bh * 0.55);
-        ctx.lineTo(cx - axx + bxx, cy - axy + bxy - bh * 0.55);
-        ctx.fill();
+          ctx.fillStyle = v.kind ? C.bus : C.cab;
+          ctx.beginPath();
+          ctx.moveTo(cx + sxx + bxx, cy + sxy + bxy - bh * 0.55);
+          ctx.lineTo(cx + sxx - bxx, cy + sxy - bxy - bh * 0.55);
+          ctx.lineTo(cx - sxx - bxx, cy - sxy - bxy - bh * 0.55);
+          ctx.lineTo(cx - sxx + bxx, cy - sxy + bxy - bh * 0.55);
+          ctx.fill();
 
-        ctx.fillStyle = v.kind ? C.busTop : C.cabTop;
-        ctx.beginPath();
-        ctx.moveTo(cx + axx * 0.72 + bxx * 0.8, cy + axy * 0.72 + bxy * 0.8 - bh);
-        ctx.lineTo(cx + axx * 0.72 - bxx * 0.8, cy + axy * 0.72 - bxy * 0.8 - bh);
-        ctx.lineTo(cx - axx * 0.72 - bxx * 0.8, cy - axy * 0.72 - bxy * 0.8 - bh);
-        ctx.lineTo(cx - axx * 0.72 + bxx * 0.8, cy - axy * 0.72 + bxy * 0.8 - bh);
-        ctx.fill();
+          ctx.fillStyle = v.kind ? C.busTop : C.cabTop;
+          ctx.beginPath();
+          ctx.moveTo(cx + sxx * 0.72 + bxx * 0.8, cy + sxy * 0.72 + bxy * 0.8 - bh);
+          ctx.lineTo(cx + sxx * 0.72 - bxx * 0.8, cy + sxy * 0.72 - bxy * 0.8 - bh);
+          ctx.lineTo(cx - sxx * 0.72 - bxx * 0.8, cy - sxy * 0.72 - bxy * 0.8 - bh);
+          ctx.lineTo(cx - sxx * 0.72 + bxx * 0.8, cy - sxy * 0.72 + bxy * 0.8 - bh);
+          ctx.fill();
+        }
 
         if (night > 0.25 && sc > 0.5) {
           ctx.fillStyle = 'rgba(' + HOT.head + ',' + (0.55 * night).toFixed(3) + ')';
           ctx.beginPath();
-          ctx.arc(cx + axx * 1.5, cy + axy * 1.5 - bh * 0.5, Math.max(1, 1.5 * sc), 0, TAU);
+          ctx.arc(cx + axx, cy + axy - bh * 0.5, Math.max(1, 1.5 * sc), 0, TAU);
           ctx.fill();
           ctx.fillStyle = 'rgba(' + HOT.tail + ',' + (0.5 * night).toFixed(3) + ')';
           ctx.beginPath();
-          ctx.arc(cx - axx * 1.5, cy - axy * 1.5 - bh * 0.5, Math.max(1, 1.2 * sc), 0, TAU);
+          ctx.arc(cx - axx, cy - axy - bh * 0.5, Math.max(1, 1.2 * sc), 0, TAU);
           ctx.fill();
         }
       }
       k = this._vnext[k];
     }
+  };
+
+  // Ground traffic is behind any elevated solid at the same screen point.
+  // This quarter-resolution mask is read once per scenery bake, then queried
+  // with a single typed-array lookup per vehicle, including during a zoom.
+  Renderer.prototype._hiddenAt = function (x, y) {
+    if (!this._coverageData) return false;
+    var k = this.scale / this._cacheScale;
+    var px = Math.floor(((x - this.ox) / k + this._cacheOx + this._cacheMx) * this._coverageScale);
+    var py = Math.floor(((y - this.oy) / k + this._cacheOy + this._cacheMy) * this._coverageScale);
+    if (px < 0 || py < 0 || px >= this._coverage.width || py >= this._coverage.height) return false;
+    return this._coverageData[(py * this._coverage.width + px) * 4 + 3] > 127;
   };
 
   /* A person: two pixels of coat, one of head. At this scale that is all a
@@ -1658,7 +2131,7 @@ window.MM = window.MM || {};
       var i = this._bBld[k], x = i % G, y = (i / G) | 0, d = x + y;
       while (vd <= d) {
         if (bo) { try { BR.drawDiag(ctx, bo, vd); } catch (e) {} }
-        this._drawVehDiag(vd); vd++;
+        this._drawVehDiag(vd); this._drawTrainDiag(vd); vd++;
       }
 
       if (LT) {
@@ -1685,13 +2158,14 @@ window.MM = window.MM || {};
     }
     while (vd < 2 * G) {
       if (bo) { try { BR.drawDiag(ctx, bo, vd); } catch (e) {} }
-      this._drawVehDiag(vd); vd++;
+      this._drawVehDiag(vd); this._drawTrainDiag(vd); vd++;
     }
   };
 
   /* ---------- hover / selection -------------------------------------- */
 
   Renderer.prototype._hoverPass = function (s) {
+    if (!this.buildMode) return;
     var hv = this.hover;
     if (!hv || !inB(hv.x, hv.y)) return;
     var ctx = this.ctx, sc = this.scale;
@@ -1766,15 +2240,24 @@ window.MM = window.MM || {};
     LT.plan(s);
     var L = LT.lots, n = L.length, k, need = n * 5;
     if (!this._lit || this._lit.length < need) this._lit = new Float32Array(Math.max(64, need));
-    var a = this._lit, w = 0;
+    var keep = [];
     for (k = 0; k < n; k++) {
       var lot = L[k], sh = LT.shape(s, lot.x1, lot.y1);
       if (!sh || sh.top < 18) continue;      // parks and yards have no windows
       // A landmark is a lattice, not a building: landmarks.js lights its own
       // beacon, and a window grid across its lot painted a bright column of
       // glazing straight through the open steelwork.
-      if (sh.arch === 'hero') continue;
-      a[w] = lot.x1; a[w + 1] = lot.y1; a[w + 2] = lot.w; a[w + 3] = lot.h; a[w + 4] = sh.top;
+      if (MM.landmarks && MM.landmarks.ARCH[sh.arch]) continue;
+      keep.push([lot.x1 + lot.y1, lot.x1, lot.y1, lot.w, lot.h, sh.top]);
+    }
+    // Back to front, in the same x+y order the city itself is painted in. The
+    // light layer carries no walls of its own, so the only thing that can stop
+    // a lit window showing through the block in front of it is draw order.
+    keep.sort(function (p, q) { return p[0] - q[0]; });
+    var a = this._lit, w = 0;
+    for (k = 0; k < keep.length; k++) {
+      var e = keep[k];
+      a[w] = e[1]; a[w + 1] = e[2]; a[w + 2] = e[3]; a[w + 3] = e[4]; a[w + 4] = e[5];
       w += 5;
     }
     this._litN = w;
@@ -1796,15 +2279,36 @@ window.MM = window.MM || {};
     var X0 = CR ? CR.x0 : 0, Y0 = CR ? CR.y0 : 0;
     var W = CR ? CR.x1 : this.w, H = CR ? CR.y1 : this.h;
     var Gg = MM.gfx, k, c, r;
+    var warm = 'rgb(' + HOT.winWarm + ')';
     ctx.save();
-    ctx.beginPath();
+    ctx.fillStyle = warm;
     for (k = 0; k < this._litN; k += 5) {
       var x = a[k], y = a[k + 1], lw = a[k + 2], lh = a[k + 3], top = a[k + 4] * sc;
       var cx = (x - y) * fx + ox, cy = (x + y) * fy + oy;
       // a lot is at most three tiles deep, so this box comfortably contains it
       if (cx < X0 - 4 * fx - lw * fx || cx > W + 4 * fx + lh * fx) continue;
-      if (cy - top < Y0 - 4 * fy || cy > H + 4 * fy) continue;
+      // Cull on the whole prism, base to roof. Testing the roof line alone
+      // dropped exactly the supertalls whose tops leave the view - and a lot
+      // culled here is a lot that never punches, which is the artifact back.
+      if (cy + fy < Y0 - 4 * fy || cy - top > H + 4 * fy) continue;
       var u0 = -2 * (lw - 1) - 1, v0 = -2 * (lh - 1) - 1;
+
+      // Everything already in the layer sits behind this lot, so clear its
+      // massing before lighting it. Windows are painted on the bounding
+      // prism's two near faces, so punching that same prism is precisely the
+      // occlusion the city has - no more, no less.
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.beginPath();
+      Gg.moveTo(ctx, cx, cy, fx, fy, u0, v0, top);
+      Gg.lineTo(ctx, cx, cy, fx, fy, 1, v0, top);
+      Gg.lineTo(ctx, cx, cy, fx, fy, 1, v0, 0);
+      Gg.lineTo(ctx, cx, cy, fx, fy, 1, 1, 0);
+      Gg.lineTo(ctx, cx, cy, fx, fy, u0, 1, 0);
+      Gg.lineTo(ctx, cx, cy, fx, fy, u0, 1, top);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.beginPath();
       // Supertalls are ~220px at scale 1; a 9-row cap spread over that height
       // made the windows read as storey-high slabs.
       var rows = clamp(Math.round(top / (22 * sc)), 1, 18);
@@ -1825,9 +2329,8 @@ window.MM = window.MM || {};
           Gg.wallQuad(ctx, cx, cy, fx, fy, 1, 1, vv + dv * 0.26, vv + dv * 0.74, ha, hb);
         }
       }
+      ctx.fill();
     }
-    ctx.fillStyle = 'rgb(' + HOT.winWarm + ')';
-    ctx.fill();
     ctx.restore();
   };
 
@@ -2062,6 +2565,7 @@ window.MM = window.MM || {};
   };
 
   Renderer.prototype._cacheRect = function () {
+    var pixelBudget = MM.visuals ? MM.visuals.profile.pixels : CACHE_PX;
     var box = this._cityBox(), w = this.w, h = this.h;
     var ox = this.ox, oy = this.oy;
     var dpr = Math.min(this.dpr || 1, 2);
@@ -2088,9 +2592,9 @@ window.MM = window.MM || {};
     var huge = 2 * (w + h) + 4 * Math.max(box.r - box.l, box.b - box.t);
     var r = rectFor(huge), a = area(r), cd = dpr;
 
-    if (a * dpr * dpr > CACHE_PX) {
+    if (a * dpr * dpr > pixelBudget) {
       // Nearly affordable? Buy the whole city by softening the cache instead.
-      var soft = Math.sqrt(CACHE_PX / Math.max(1, a));
+      var soft = Math.sqrt(pixelBudget / Math.max(1, a));
       if (soft >= CACHE_DPR_MIN) {
         cd = Math.min(dpr, soft);
       } else {
@@ -2104,7 +2608,7 @@ window.MM = window.MM || {};
         var lo = CACHE_M, hi = huge;
         for (var i = 0; i < 26; i++) {
           var mid = (lo + hi) * 0.5;
-          if (area(rectFor(mid)) * dpr * dpr > CACHE_PX) hi = mid; else lo = mid;
+          if (area(rectFor(mid)) * dpr * dpr > pixelBudget) hi = mid; else lo = mid;
         }
         r = rectFor(lo);
       }
@@ -2113,6 +2617,9 @@ window.MM = window.MM || {};
     // Where the city stops there is nothing to draw and the sky underneath is
     // the right answer, so that edge is left exactly where it falls.
     if (r.R - r.L < 1 || r.B - r.T < 1) return { mx: 0, my: 0, W: 1, H: 1, dpr: cd, empty: true };
+    // A large viewport alone can exceed the budget, even with no margin.
+    // Soften that cache as a last resort instead of allocating past the cap.
+    cd = Math.min(cd, Math.sqrt(pixelBudget / Math.max(1, (r.R - r.L) * (r.B - r.T))));
     return { mx: -r.L, my: -r.T, W: r.R - r.L, H: r.B - r.T, dpr: cd, empty: false };
   };
 
@@ -2216,7 +2723,7 @@ window.MM = window.MM || {};
     var dpr = rect.dpr;
     var mx = rect.mx, my = rect.my, W = rect.W, H = rect.H;
     var cc = this._cc;
-    var cw = Math.max(1, Math.round(W * dpr)), ch = Math.max(1, Math.round(H * dpr));
+    var cw = Math.max(1, Math.floor(W * dpr)), ch = Math.max(1, Math.floor(H * dpr));
     if (cc.width !== cw || cc.height !== ch) { cc.width = cw; cc.height = ch; this._cctx = null; }
     if (!this._cctx) this._cctx = cc.getContext('2d');
     var lc = this._lc;
@@ -2265,13 +2772,27 @@ window.MM = window.MM || {};
     this._collect(s, R);
     this._ground(s);
     this._roadPass(s);
+    this._railPass(s);
     this._overlayPass(s);
     this._dapple(s);
     this._shadows(s);
 
     var dim = this.overlay && this.overlay !== 'none';
     if (dim) ctx.globalAlpha = 0.55;
-    this._structures(s);
+    var mask = this._coverage;
+    if (!mask) mask = this._coverage = document.createElement('canvas');
+    var res = Math.min(.25, dpr * .25), mw = Math.max(1, Math.ceil(W * res)), mh = Math.max(1, Math.ceil(H * res));
+    if (mask.width !== mw || mask.height !== mh) { mask.width = mw; mask.height = mh; }
+    var mg = mask.getContext('2d', { willReadFrequently: true });
+    mg.setTransform(res, 0, 0, res, 0, 0); mg.fillStyle = '#000';
+    mg.save();
+    if (R) { mg.beginPath(); mg.rect(R.x0, R.y0, R.x1 - R.x0, R.y1 - R.y0); mg.clip(); mg.clearRect(R.x0, R.y0, R.x1 - R.x0, R.y1 - R.y0); }
+    else mg.clearRect(0, 0, W, H);
+    if (MM.gfx) MM.gfx.setCoverage(mg);
+    try { this._structures(s); } finally { if (MM.gfx) MM.gfx.setCoverage(null); mg.restore(); }
+    this._coverageScale = res;
+    try { this._coverageData = mg.getImageData(0, 0, mw, mh).data; }
+    catch (e) { this._coverageData = null; } // privacy settings may deny readback
     if (dim) ctx.globalAlpha = 1;
     if (R) ctx.restore();
 
@@ -2344,6 +2865,9 @@ window.MM = window.MM || {};
     }
 
     if (!s || !s.grid) return;
+    var quality = MM.visuals ? MM.visuals.quality : 'high';
+    if (this._quality !== quality) { this._quality = quality; this.resize(); this._cacheKey = ''; }
+    if (this._cursorBuild !== this.buildMode) { this._cursorBuild = this.buildMode; this.canvas.classList.toggle('building', this.buildMode); }
 
     this._camera(dt);          // held keys and momentum, before anything reads ox/oy
 
@@ -2352,6 +2876,7 @@ window.MM = window.MM || {};
 
     if (this.clock - this._netT > 400) { this._netT = this.clock; this._rebuildNet(s); }
     this._traffic(s, dt);
+    this._trains(s, dt);
 
     var ctx = this.ctx;
 
@@ -2393,6 +2918,7 @@ window.MM = window.MM || {};
       this.scale !== this._lastScale;
     this._lastOx = this.ox; this._lastOy = this.oy; this._lastScale = this.scale;
     this._still = moved ? 0 : this._still + 1;
+    this._settleMs = moved ? 0 : this._settleMs + dt;
 
     var b = this._blitAt();
     // Two things it cannot ride out: a cache that no longer covers what is on
@@ -2408,7 +2934,7 @@ window.MM = window.MM || {};
     var must = key !== this._cacheKey || !this._cacheW || !this._cacheCovers() ||
       b.k < 0.12 || b.k > 3.00;
     var rev = s.rev | 0;
-    if (must || (this._cacheScale !== this.scale && this._still >= 1)) {
+    if (must || (this._cacheScale !== this.scale && this._settleMs >= 180)) {
       this._renderStatic(s);
       this._commitSig(s);
       this._cacheKey = key; this._cacheRev = rev;
@@ -2425,9 +2951,9 @@ window.MM = window.MM || {};
     this._blitCache(ctx, this._cc, b);
 
     // The water surface is live, over the blit and under the traffic.
-    if (MM.light) MM.light.shimmer(ctx, this, s);
+    if (MM.light && quality !== 'eco') MM.light.shimmer(ctx, this, s);
 
-    for (var d = 0; d < 2 * G; d++) this._drawVehDiag(d);
+    for (var d = 0; d < 2 * G; d++) { this._drawVehDiag(d); this._drawTrainDiag(d); }
 
     this._manholes();
 
@@ -2468,6 +2994,52 @@ window.MM = window.MM || {};
     // Hover sits over the vignette now rather than under it, which costs
     // nothing and keeps the cursor readable in the darkened corners.
     this._hoverPass(s);
+    this._pickPass(s);
+  };
+
+  /* The inspector's selection, drawn as the lot's footprint rather than as a
+     single tile: what you picked was a building, so what lights up is the
+     whole parcel it stands on. this.pick is set by src/inspect.js and is null
+     the rest of the time, which is what keeps this free when nobody is
+     looking at anything. */
+  Renderer.prototype._pickPass = function (s) {
+    var p = this.pick;
+    if (!p) return;
+    var ctx = this.ctx, sc = this.scale, fx = HW * sc, fy = HH * sc;
+
+    if (p.agent) {
+      var v = p.agent;
+      if (v.sx < -1000) return;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,214,102,0.95)';
+      ctx.lineWidth = Math.max(1.2, 1.6 * sc);
+      ctx.beginPath();
+      ctx.arc(v.sx, v.sy, Math.max(7, 9 * sc), 0, TAU);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+    if (!p.lot) return;
+    var L = p.lot;
+    // Footprint outline: the four outer corners of the lot's tile rectangle,
+    // in the same projection the ground pads were drawn with.
+    var pts = [[L.x0 - 0.5, L.y0 - 0.5], [L.x1 + 0.5, L.y0 - 0.5],
+      [L.x1 + 0.5, L.y1 + 0.5], [L.x0 - 0.5, L.y1 + 0.5]];
+    ctx.save();
+    ctx.beginPath();
+    for (var i = 0; i < 4; i++) {
+      var wx = pts[i][0], wy = pts[i][1];
+      var cx = (wx - wy) * fx + this.ox, cy = (wx + wy) * fy + this.oy;
+      if (i) ctx.lineTo(cx, cy); else ctx.moveTo(cx, cy);
+    }
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255,214,102,0.13)';
+    ctx.fill();
+    var pulse = 0.70 + 0.30 * Math.sin(this.clock * 0.005);
+    ctx.strokeStyle = 'rgba(255,214,102,' + pulse.toFixed(3) + ')';
+    ctx.lineWidth = Math.max(1.4, 2 * sc);
+    ctx.stroke();
+    ctx.restore();
   };
 
   function lerp3 (a, b, t) { return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]; }

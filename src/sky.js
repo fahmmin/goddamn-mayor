@@ -218,14 +218,23 @@ window.MM = window.MM || {};
     var night = o.N, cl = o.clock, i;
     var wide = sc > 0.42;
 
-    /* --- clouds: slow, huge, and always above everything ------------- */
+    /* --- clouds: slow, huge, and always above everything -------------
+       High over the map, not pinned to the window. Everything in this file
+       is placed in tile space and an altitude for the same reason: the
+       moment one actor is placed against the viewport it slides across the
+       rooftops on a pan and gives the whole illusion away. */
     var cn = wide ? 5 : 3;
     ctx.save();
     for (i = 0; i < cn; i++) {
       var ct = (cl * 0.000011 + i * 0.211) % 1;
-      var cx = -260 + ct * (W + 520);
-      var cy = 30 + ((i * 79) % 150) + Math.sin(cl * 0.0002 + i) * 8;
+      var cu = -12 + ct * (G + 24), cv = (i * 9.7) % G;
+      // Well clear of the skyline. In world space a cloud has a real height
+      // over the ground rather than a fixed place at the top of the window,
+      // and at 520px it sat among the towers as a smear of haze.
+      var calt = (980 + ((i * 79) % 220)) * sc + Math.sin(cl * 0.0002 + i) * 8;
+      var cx = (cu - cv) * fx + ox, cy = (cu + cv) * fy + oy - calt;
       var cr = (34 + (i % 3) * 16) * (0.8 + sc * 0.4);
+      if (cx < -cr * 3 || cx > W + cr * 3 || cy < -cr * 3 || cy > H + cr * 3) continue;
       ctx.fillStyle = 'rgba(255,255,255,' + (0.20 + 0.12 * (1 - night)).toFixed(3) + ')';
       ctx.beginPath();
       ctx.arc(cx, cy, cr * 0.62, 0, TAU);
@@ -263,15 +272,37 @@ window.MM = window.MM || {};
       balloon(ctx, bx, by, (14 + (i % 3) * 4) * Math.max(0.55, sc), LIVERY[i % LIVERY.length], night);
     }
 
-    /* --- an airliner on the approach, and the traffic helicopter ------ */
+    /* --- an airliner on the approach, and the traffic helicopter ------
+       Tile space and an altitude, exactly like the balloons above. Pinned to
+       the viewport instead, an aircraft slides across the rooftops whenever
+       the camera pans - the city reads as sliding under a painted sticker
+       rather than as a plane flying over a city. The approach runs along +x
+       (nose screen-right, dir 0); the departure runs along +y, which on an
+       isometric screen travels left, hence dir 1. */
     var at = (cl * 0.0000255) % 1;
-    airliner(ctx, -140 + at * (W + 280), 96 + Math.sin(at * 3.1) * 26, 13 * Math.max(0.7, sc), 0, night);
-    var at2 = (cl * 0.0000181 + 0.5) % 1;
-    if (wide) airliner(ctx, W + 140 - at2 * (W + 280), 190 + Math.cos(at2 * 2.6) * 20, 10 * Math.max(0.7, sc), 1, night);
+    var au = -10 + at * (G + 20), av = G * 0.30;
+    var aalt = (330 + Math.sin(at * 3.1) * 26) * sc;
+    var apx = (au - av) * fx + ox, apy = (au + av) * fy + oy - aalt;
+    if (apx > -160 && apx < W + 160 && apy > -120 && apy < H + 120) {
+      airliner(ctx, apx, apy, 13 * Math.max(0.7, sc), 0, night);
+    }
+    if (wide) {
+      var at2 = (cl * 0.0000181 + 0.5) % 1;
+      var bu = G * 0.66, bv = -10 + at2 * (G + 20);
+      var balt = (250 + Math.cos(at2 * 2.6) * 20) * sc;
+      var bpx = (bu - bv) * fx + ox, bpy = (bu + bv) * fy + oy - balt;
+      if (bpx > -160 && bpx < W + 160 && bpy > -120 && bpy < H + 120) {
+        airliner(ctx, bpx, bpy, 10 * Math.max(0.7, sc), 1, night);
+      }
+    }
     if (wide) {
       var ht = cl * 0.00021;
-      var hx = W * 0.5 + Math.cos(ht) * W * 0.30, hy = H * 0.26 + Math.sin(ht * 1.3) * H * 0.11;
-      chopper(ctx, hx, hy, 9 * Math.max(0.7, sc), cl * 0.05, night);
+      var hu = G * 0.5 + Math.cos(ht) * G * 0.34;
+      var hv = G * 0.5 + Math.sin(ht * 1.3) * G * 0.30;
+      var hpx = (hu - hv) * fx + ox, hpy = (hu + hv) * fy + oy - 210 * sc;
+      if (hpx > -90 && hpx < W + 90 && hpy > -90 && hpy < H + 90) {
+        chopper(ctx, hpx, hpy, 9 * Math.max(0.7, sc), cl * 0.05, night);
+      }
     }
 
     /* --- birds -------------------------------------------------------- */
@@ -282,8 +313,11 @@ window.MM = window.MM || {};
       ctx.beginPath();
       for (i = 0; i < 11; i++) {
         var ft = (cl * 0.000048 + i * 0.0917) % 1;
-        var fx2 = W + 60 - ft * (W + 120);
-        var fy2 = 60 + ((i * 37) % 130) + Math.sin(cl * 0.0016 + i * 1.7) * 7;
+        // birds fly over the city too, not over the window
+        var du2 = G + 6 - ft * (G + 12), dv2 = (i * 4.37) % G;
+        var dalt = (70 + ((i * 37) % 90)) * sc + Math.sin(cl * 0.0016 + i * 1.7) * 7;
+        var fx2 = (du2 - dv2) * fx + ox, fy2 = (du2 + dv2) * fy + oy - dalt;
+        if (fx2 < -40 || fx2 > W + 40 || fy2 < -40 || fy2 > H + 40) continue;
         var r = 3.2 + (i % 3) * 1.1;
         var flap = 0.35 + 0.5 * Math.abs(Math.sin(cl * 0.009 + i));
         ctx.moveTo(fx2 - r, fy2 + r * flap);
