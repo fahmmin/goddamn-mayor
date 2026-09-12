@@ -3,9 +3,14 @@
 Web app, served over HTTP. **Classic `<script>` tags, no ES modules, no bundler, ZERO npm runtime deps.**
 Everything hangs off the global `window.MM`. Load order (index.html):
 
-    state.js -> gfx.js -> audio.js -> policies.js -> events.js -> sim.js ->
-    ground.js -> roofs.js -> props.js -> lots.js -> light.js -> bridges.js ->
-    landmarks.js -> sky.js -> render.js -> ui.js -> demo.js -> game.js
+    state.js -> districts.js -> gfx.js -> materials.js -> audio.js ->
+    policies.js -> events.js -> sim.js -> ground.js -> roofs.js -> props.js ->
+    lots.js -> ens.js -> quests.js -> light.js -> bridges.js -> landmarks.js ->
+    sky.js -> render.js -> ui.js -> demo.js -> tour.js -> game.js ->
+    inspect.js -> shell.js
+
+`smoke.js` asserts this order. A new file in `src/` is added to both in the
+same commit, or the next load-order bug goes unseen.
 
 Every module file must be wrapped exactly like this:
 
@@ -200,6 +205,42 @@ frame.
 
 `#hud` is an empty div overlaying the full-bleed `#city` canvas. HUD wrapper elements must be
 `pointer-events:none` with `pointer-events:auto` on the actual controls, so map dragging still works.
+
+### src/quests.js -> `MM.quests`
+The chapters, and the only onboarding state that exists. Every step is a **pure
+predicate over `s`** - nothing stored, no field on the save, no migration.
+- `MM.quests.check(s)` -> `{ id, title, steps: [{id,label,hint,done}], hint, done, total, chaptersDone, complete }`
+- `MM.quests.level(s)` -> `{ n, title, of }`
+- `MM.quests.CHAPTERS` - ordered and static; the three city chapters come before
+  the three chain ones, because Start demo never signs in.
+
+Purity is the contract. `check()` must not mutate `s`, must be safe to call
+every frame, and must read a missing `s.chain` as *unfinished*, never as an
+error. `src/quests.test.js` asserts all three.
+
+### src/tour.js -> `MM.tour`, `MM.Tour`
+The guided demo behind Start demo. A schedule, not game logic: every beat calls
+a system that already exists.
+- `MM.tour.start(opts)` / `MM.tour.BEATS` / `MM.tour.TOTAL`
+- `new MM.Tour({ now, headless, beats })` - `now` is injectable so
+  `tools/tour-check.js` can rehearse the whole run on a fake clock.
+
+A beat may declare `needs: 'wallet' | 'graph'` and an `alt` to run when that is
+missing. Nothing in the demo may depend on a wallet existing.
+
+### src/demo.js -> `MM.buildDemoCity`, `MM.newGame`
+- `MM.newGame(kind)` - `'fresh'` or `'showcase'`. **Mutates `MM.state` in
+  place and returns it.** game.js closes over that object, so replacing it
+  would leave the game simulating the old city. Typed arrays are written with
+  `.set()` and `s.rev` is bumped, because render.js and lots.js cache against
+  those exact buffers.
+
+### src/shell.js -> `MM.shell`
+- `shell.show(mode)` / `shell.play()` / `shell.pause()`
+- `shell.rideTo(p)` - ride to 0..1 along the line. Sets the **scroll**, not
+  just the camera: the copy column is real scrolled content, so driving
+  `apply()` alone moves the camera and leaves the words behind.
+- `shell.beTheMayor()` / `shell.startDemo()` - the two doors.
 
 ## Rules
 - Only edit the files you own. Never edit state.js. index.html changes

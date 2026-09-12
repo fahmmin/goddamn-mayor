@@ -137,7 +137,7 @@ head beats three bolt-ons they cannot:
 |---|---|---|
 | **ENS** (ENSv2) | The city is a namespace. `mayor.…eth` **expires** with the four-year term, is **revoked** by the recall the simulation already triggers, and is **non-transferable** because an office cannot be sold — while a district deed can. Each district deploys its own registry. | **Live**, 8/8 in `verify-gate.js` |
 | **Privy** | Embedded wallets, so anyone is in the economy in under a minute with no seed phrase, plus the treasury flow behind the vaults. | **Live** |
-| ~~The Graph~~ | A standardized ERC-4626 subgraph over the district vaults. The vaults are deliberately stock ERC-4626 so this is a small step rather than a rewrite — but nothing is deployed to Subgraph Studio, so it is **not** entered. | Roadmap, not submitted |
+| **The Graph** | A standardized ERC-4626 subgraph in `subgraph/` over the nine district vaults, `CityOracle` and `CityUSD` — the vaults are stock OpenZeppelin so the schema is the standard vault shape, not a bespoke one. The manifest is generated from `web3/config.json` so it cannot drift from the deployment. `graph codegen` and `graph build` run clean. | **Built, not deployed** — needs a Studio deploy key |
 
 ### Why ENS is load-bearing, not decoration
 
