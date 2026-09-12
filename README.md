@@ -48,9 +48,11 @@ NaN, out-of-range stat, or broken module contract. Both run without Electron.
 | | |
 |---|---|
 | `1`-`9`, `s`, `t`, `0` | pick a build tool |
-| Left-drag | build / paint |
+| Left-drag | explore; build / paint when a tool is selected |
 | Right-drag | pan the city — flick and let go to throw it |
 | Wheel | zoom |
+| Touch | drag to explore, pinch to zoom; tap to place a selected building |
+| Escape / Done | leave placement mode |
 | Arrows | pan (hold them), `Shift` to sprint |
 | Space | pause / resume |
 | `+` / `-` | game speed |
@@ -62,6 +64,22 @@ or you're paying upkeep on empty lots.
 Then watch three numbers. **Rent** is the heart of the game — let it run and
 approval bleeds and people leave. **Unemployment** means you zoned homes without
 jobs. **Traffic** means you built roads where you needed buses.
+
+The **Build city** catalog groups zones, services, transport and parks. **City
+Hall** holds policies, the feed, taxes and city indicators. The gear button
+offers **Eco**, **Balanced** (default) and **High** graphics presets, saved on
+this device. On narrow screens the catalog starts closed to leave room to play.
+
+Surface textures, window reflections and shaded tree crowns are baked into the
+static city cache. A small WebGL shader generates the material atlas once;
+browsers without WebGL use a Canvas2D fallback. There are no new runtime
+dependencies or downloaded assets. See [the rendering notes](docs/VISUALS.md)
+for budgets, measurements and tradeoffs.
+
+```bash
+npm run visual-check             # real Chromium UI/rendering checks
+npm run visual-check -- --canvas # exercise the WebGL-free fallback
+```
 
 Policies are real trade-offs, not upgrades. A rent freeze holds rent down and
 slows new housing. Taxing high earners funds everything and cools commercial
@@ -81,6 +99,7 @@ panel later.
 | `src/state.js` | the shared state shape, terrain seed, save/load |
 | `src/sim.js` | land value, growth, rent, traffic, budget, approval |
 | `src/render.js` | isometric renderer, day/night, traffic animation |
+| `src/materials.js` | baked surface shaders, Canvas fallback, graphics presets |
 | `src/ui.js` + `style.css` | HUD, policy cards, budget, event modal |
 | `src/policies.js` | the platform |
 | `src/events.js` | things that happen to a city |
@@ -95,8 +114,21 @@ them could be written at the same time.
 
 ## The Web3 layer
 
-Built for **ETHOnline 2026**. Full plan in [`docs/WEB3_PLAN.md`](docs/WEB3_PLAN.md);
-daily progress in [`CHANGELOG.md`](CHANGELOG.md).
+Built for **ETHOnline 2026** and **live on Sepolia**. The judge-facing writeup
+is [`docs/SUBMISSION.md`](docs/SUBMISSION.md) — deployed addresses, how to
+verify the ENS gate yourself, and what existed before the event. Full plan in
+[`docs/WEB3_PLAN.md`](docs/WEB3_PLAN.md); daily progress in
+[`CHANGELOG.md`](CHANGELOG.md).
+
+```bash
+node chain/verify-gate.js     # 8 assertions against the live deployment
+```
+
+The city's root name is [`cityhall.eth`](https://sepolia.app.ens.domains/cityhall.eth).
+Nine districts each have their own ENSv2 registry and their own ERC-4626 vault;
+`CityOracle` at `0x82c1d751…72db` is the only way city data reaches the chain,
+and it will not accept a write from anyone who does not hold
+`mayor.cityhall.eth`.
 
 > **The city is a public company and the mayor is its management.** Nine
 > districts each issue shares. Share value tracks that district's land value —

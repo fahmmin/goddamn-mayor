@@ -15,16 +15,75 @@ chain unreachable.
 | Day | Date | Shipped | Checks |
 |:---:|---|---|---|
 | **1** | 2026-09-06 | Web build served over HTTP · nine districts with per-district NAV · showcase economy unfrozen · ENSv2 verified on Sepolia · secret hygiene | 8 · 12 · 207 green |
-| 2 | 2026-09-07 | *planned* — claim the root name, 8 district registries, offices with EAC roles, all four subname setups, resolver text records | |
-| 3 | 2026-09-08 | *planned* — `CityOracle` (ENS-role-gated) + `DistrictVault` ×8 (ERC-4626), deployed and verified | |
-| 4 | 2026-09-09 | *planned* — the write path: daily NAV + approval + rating pushed onchain, signed by the mayor | |
-| 5 | 2026-09-10 | *planned* — standardized ERC-4626 subgraph, deployed to Subgraph Studio | |
-| 6 | 2026-09-11 | *planned* — the sidebar: live district rows, sparklines, credit rating | |
-| 7 | 2026-09-12 | *planned* — Privy embedded wallet, vault deposit flow, treasury key quorum | |
-| 8 | 2026-09-13 | *planned* — `mcp-city-hall` MCP server, Deputy Mayor agent, Substreams module | |
-| 9 | 2026-09-14/15 | *planned* — freeze: videos, docs, architecture diagram, submissions | |
+| — | 2026-09-07/10 | *(the chain layer did not move — this window went into visual fidelity and a landing page)* | |
+| **2** | 2026-09-12 | **The whole chain layer, in one day.** `cityhall.eth` registered · 9 district registries · mayor + deputy offices · CityOracle, CityUSD, 9 ERC-4626 vaults deployed · market panel · Privy embedded wallets · ENS gate proven 8/8 against the live chain | 8 · 12 · 207 green · 8 onchain |
+| 3 | 2026-09-13 | *planned* — docs, demo video, pitch, submissions | |
 
-Check counts are `districts` · `sim` · `smoke`.
+Check counts are `districts` · `sim` · `smoke` · `gate`.
+
+
+---
+
+## Day 2 — 2026-09-12
+
+The city went onchain. `cityhall.eth` is registered, nine districts each have
+their own registry and their own ERC-4626 vault, and the ENS gate is proven
+rather than asserted.
+
+| Shipped | Where | Verified by |
+|---|---|---|
+| `cityhall.eth` registered on Sepolia | tx `0x6f0fff01…` | the name resolves; the deployer holds it |
+| Nine district registries via Verifiable Factory | `chain/deploy.js` | 9 proxies, addresses in `deployed.json` |
+| `mayor` + `deputy` offices, expiring and non-transferable | `chain/deploy.js` | `officeState()` returns holder + expiry |
+| `CityOracle`, ENS-role-gated | `contracts/CityOracle.sol` | **8/8 in `verify-gate.js`, live** |
+| `CityUSD` + nine stock ERC-4626 vaults | `contracts/` | `wireVaults()`, reserve funded |
+| District market panel — live/stale/local | `src/ui.js`, `src/style.css` | reads real NAVs in a real browser |
+| Privy embedded wallets, email OTP | `web3/src/wallet.js` | cold load shows "Connect wallet" |
+| The game is untouched | — | 207 smoke + 20 unit checks green throughout |
+
+### What it found
+
+- **`ETHRegistrar.register()` is not payable.** It takes an ERC-20
+  `paymentToken`, so no amount of Sepolia ETH buys a name. Worse, the vendored
+  `chain/abi/MockUSDC.json` carries the address from *contracts-v2's own*
+  namespace, not the documented beta's — the beta oracle answers
+  `isPaymentToken()` **false** for it, and `getRegisterPrice()` then reverts
+  with a signature viem cannot decode. That reads as a stale ABI rather than a
+  wrong address. Found read-only, before the key existed; at deploy time on a
+  deadline it would have read as "ENSv2 is broken, drop the track." Both real
+  tokens are now in `addresses.js`: `cityhall.eth` is 8.000021 MockUSDC/year.
+
+- **The plan's vault design was drainable.** `DistrictVault.totalAssets()`
+  reading the oracle breaks ERC-4626 share math — shares mint against assets
+  that are not there. The vault is now stock OpenZeppelin and the oracle moves
+  real tokens instead, capped at 5% out per settlement.
+
+- **A revert test that greps `shortMessage` passes on any failure.** viem's
+  `shortMessage` is always "the contract function reverted"; the decoded custom
+  error lives on `cause.data.errorName`. The first version of `verify-gate.js`
+  would have passed for a typo'd function name. It now asserts `NotTheMayor`
+  by name.
+
+- **Privy reports a first-time visitor by throwing.** `user.get()` raises
+  `missing_or_invalid_token` when storage is empty — the most common path, not
+  an error. Catching it alongside `initialize()` showed every new judge "wallet
+  unavailable" on the one screen that has to work cold.
+
+- **`config.json` is served to browsers.** It was publishing the paid Alchemy
+  key to buy nothing; the browser's handful of reads run fine on the public
+  node. `make-config.js` now refuses to write if the Privy app secret or the
+  deployer key would appear in the served file.
+
+- **The market panel walked 2,304 tiles at 60fps** in its first draft. NAV
+  changes once per game-day, so it is sampled there and cached.
+
+### Commits
+
+```
+3f4e48c  feat: deploy the city to Sepolia, and prove the ENS gate is real
+4ffe1c2  feat: the chain layer - deploy path, Privy wallets, oracle reads
+2fb18af  feat: contracts and the district market panel
+```
 
 ---
 
