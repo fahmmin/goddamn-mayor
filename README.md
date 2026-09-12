@@ -1,6 +1,6 @@
 # OBSICITY
 
-An isometric New York city-builder that you can underwrite. Runs in a browser, or in a window next to your IDE.
+An isometric New York city-builder that you can underwrite. Runs in a browser tab next to your IDE.
 
 You are the Mayor. You have four years, a treasury, and a city that will tell you
 loudly when you get it wrong. Zone it, wire it with roads and buses, pass the
@@ -13,33 +13,22 @@ while an agent is thinking. Glance over, lay two blocks, glance back.
 
 ```bash
 npm install
-npm run serve      # → http://localhost:8080
+npm start          # → http://localhost:8080
 ```
 
-The browser is the primary build and the one the Web3 layer targets. `npm start`
-opens the same thing in a desktop window — and it is genuinely the same thing:
-the Electron shell now starts this static host and loads `http://localhost:8080`
-rather than `loadFile`ing the page. A `file://` page has a null origin, which
-cannot hold a Privy session and gets rejected by most RPC endpoints, so the
-desktop build would otherwise have been the only build with no chain layer.
+`npm install` pulls **nothing** — there are no dependencies, dev or otherwise,
+and `tools/serve.js` is a dependency-free static host. The whole game is plain
+`<script>` tags over one `window.MM` namespace.
 
-You land on the **title screen**, not in the middle of a city. Enter from there,
-press `Esc` at any time to come back, and find how-to-play, the chain writeup,
-graphics and sound in the menu.
+You land on the **title screen**, not in the middle of a city. Scroll to ride
+the line through eight stops — skyline, airfield, downtown, marina, high
+street, stadium, waterfront, the blocks — then enter. Press `Esc` at any time
+to come back, and find how-to-play, the chain writeup, graphics and sound in
+the menu.
 
 Two switches on the URL: `?diorama` freezes the economy and holds the city
 exactly as planned (the mode to shoot stills in), `?play` opens on the starter
 block instead of the built-out city.
-
-
-## Build a Windows executable
-
-```bash
-npm run dist
-```
-
-Output lands in `dist/Obsicity-win32-x64/`. `Obsicity.exe` is the game —
-the folder is self-contained and portable; copy it anywhere.
 
 ## Checks
 
@@ -50,7 +39,7 @@ npm test
 `npm test` runs the simulation unit tests. `node smoke.js` runs the full
 integration harness: it loads every module against a fake DOM, drives 500 game
 days, answers every event, toggles every policy on and off, and fails on any
-NaN, out-of-range stat, or broken module contract. Both run without Electron.
+NaN, out-of-range stat, or broken module contract. Neither needs a browser.
 
 ## Playing
 
@@ -85,11 +74,6 @@ browsers without WebGL use a Canvas2D fallback. There are no new runtime
 dependencies or downloaded assets. See [the rendering notes](docs/VISUALS.md)
 for budgets, measurements and tradeoffs.
 
-```bash
-npm run visual-check             # real Chromium UI/rendering checks
-npm run visual-check -- --canvas # exercise the WebGL-free fallback
-```
-
 Policies are real trade-offs, not upgrades. A rent freeze holds rent down and
 slows new housing. Taxing high earners funds everything and cools commercial
 growth. Free buses are transformative and get more expensive with every resident
@@ -97,14 +81,13 @@ you attract. There is no build order that wins for free.
 
 ## Architecture
 
-Electron shell, one HTML page, plain canvas 2D. No bundler, no framework, no
+One HTML page, plain canvas 2D, served over HTTP. No bundler, no framework, no
 runtime dependencies — classic `<script>` tags over a single `window.MM`
 namespace, which is also what makes it portable to a browser-extension side
 panel later.
 
 | File | Owns |
 |---|---|
-| `main.js` | Electron window |
 | `src/state.js` | the shared state shape, terrain seed, save/load |
 | `src/sim.js` | land value, growth, rent, traffic, budget, approval |
 | `src/render.js` | isometric renderer, day/night, traffic animation |
@@ -116,7 +99,7 @@ panel later.
 | `src/game.js` | input, main loop, build/bulldoze, wiring |
 | `src/shell.js` | title screen, menu, panels, pause — the front of the product |
 | `src/districts.js` | the nine districts, and what each one is worth |
-| `tools/serve.js` | static host, no dependencies — also what the desktop build serves |
+| `tools/serve.js` | the static host — the whole server, no dependencies |
 | `chain/` | ENSv2 addresses, ABIs, deploy, verification — npm deps live here |
 | `web3/` | Privy + viem, bundled separately so `src/` never gains a dependency |
 

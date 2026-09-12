@@ -5,7 +5,7 @@ description: Use when writing or editing any file in src/ of MAYOR MAMDANI - the
 
 # MAYOR MAMDANI module contract
 
-Electron app, one HTML page, canvas 2D. **Classic `<script>` tags. No ES modules,
+Web app served over HTTP, one HTML page, canvas 2D. **Classic `<script>` tags. No ES modules,
 no bundler, zero npm runtime dependencies.** Everything hangs off `window.MM`.
 
 ## Every module file is wrapped exactly like this
@@ -19,7 +19,7 @@ window.MM = window.MM || {};
 ```
 
 No `export`, no `import`, no `require` inside `src/`. `require` exists only in
-`main.js`, which is the Electron main process.
+the Node-side helpers under `tools/`, `chain/` and `web3/`.
 
 ## Load order
 
@@ -80,7 +80,7 @@ result to `s.pending`.
 
 - **No network calls, no external fonts, no CDN.** CSP is `default-src 'self'`.
   A Google Fonts link will silently fail to load and the app must still look right.
-- **Must run from `file://`** inside Electron. Anything assuming an HTTP origin is out.
+- **Must run from an HTTP origin.** `npm start` serves it; the chain layer needs a real origin.
 - **Audio is synthesized**, never asset files. Create the `AudioContext` lazily on
   first call and `resume()` it — Chromium blocks audio until a user gesture.
 - **`ui.update(state)` runs every frame.** Diff text, never rebuild DOM.

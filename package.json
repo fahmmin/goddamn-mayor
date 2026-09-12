@@ -2,26 +2,18 @@
   "name": "obsicity",
   "version": "0.1.0",
   "description": "OBSICITY - an isometric city you can underwrite. Built for ETHOnline 2026.",
-  "main": "main.js",
   "author": "Cyrene",
   "license": "MIT",
   "scripts": {
-    "start": "electron .",
-    "test": "node src/sim.test.js && node src/districts.test.js",
-    "dist": "node tools/make-icon.js && electron-packager . Obsicity --platform=win32 --arch=x64 --out=dist --overwrite --app-version=0.1.0 --icon=build/icon.ico --ignore=\"^/node_modules\" --ignore=\"^/\\\\.[^/]\" --ignore=\"^/chain\" --ignore=\"^/landing\" --ignore=\"^/docs\" --ignore=\"^/dist\" --ignore=\"^/build\" --ignore=\"^/output\" --ignore=\"^/contracts\" --ignore=\"^/tools/(?!serve\\\\.js$)\" --ignore=\"^/web3/(?!bundle\\\\.js$|config\\\\.json$)\" --ignore=\"^/smoke\\\\.js$\" --ignore=\"^/src/.*\\\\.test\\\\.js$\" --ignore=\"\\\\.md$\"",
-    "smoke": "node smoke.js",
-    "visual-check": "electron tools/visual-check.js",
-    "icon": "node tools/make-icon.js",
+    "start": "node tools/serve.js",
     "serve": "node tools/serve.js",
+    "test": "node src/sim.test.js && node src/districts.test.js && node src/ens.test.js",
+    "smoke": "node smoke.js",
     "web3:build": "npm --prefix web3 run build",
     "web3:config": "node web3/make-config.js",
-    "chain:verify": "node chain/verify-gate.js",
     "chain:deploy": "node chain/deploy.js",
+    "chain:verify": "node chain/verify-gate.js",
     "chain:push": "node chain/push-city.js"
-  },
-  "devDependencies": {
-    "@electron/packager": "^20.3.0",
-    "electron": "^44.1.0"
   },
   "productName": "Obsicity"
 }

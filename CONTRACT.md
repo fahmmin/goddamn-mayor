@@ -1,6 +1,6 @@
 # MAYOR MAMDANI - module contract
 
-Electron desktop app. **Classic `<script>` tags, no ES modules, no bundler, ZERO npm runtime deps.**
+Web app, served over HTTP. **Classic `<script>` tags, no ES modules, no bundler, ZERO npm runtime deps.**
 Everything hangs off the global `window.MM`. Load order (index.html):
 
     state.js -> gfx.js -> audio.js -> policies.js -> events.js -> sim.js ->
@@ -209,4 +209,4 @@ frame.
   camera itself lives in render.js, which is the only thing that sees a frame
   and can integrate against real time.
 - No network calls, no external fonts, no CDN. CSP is `default-src 'self'`.
-- Must run from `file://` inside Electron.
+- Must run from a real HTTP origin (`npm start`). A null `file://` origin cannot hold a Privy session and is refused by most RPC endpoints.

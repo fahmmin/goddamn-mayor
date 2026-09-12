@@ -1,7 +1,6 @@
 node_modules/
 dist/
-build/*.png
-!build/icon.png
+build/
 
 # secrets - never commit. Real values live only in your local .env
 .env
@@ -11,8 +10,6 @@ build/*.png
 # build output and scratch
 web3/bundle.js
 .playwright-mcp/
-*.png
-!build/icon.png
 chain/build/
 chain/deployed.json
 web3/node_modules/

@@ -7,10 +7,10 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-/* argv[2] is a port only when a human typed one. Electron fills argv with
- * its own switches, and Number('--inspect') is NaN, which listen() then
- * treats as "any free port" - the window would load localhost:8080 and find
- * nothing there. Take it only when it actually parses as a port. */
+/* argv[2] is a port only when a human typed one. A host that fills argv with
+ * its own switches would hand us Number('--inspect') = NaN, which listen()
+ * treats as "any free port" - the page would then be served somewhere
+ * nobody is looking. Take it only when it actually parses as a port. */
 const fromArgv = Number(process.argv[2]);
 const PORT = (Number.isInteger(fromArgv) && fromArgv > 0 && fromArgv < 65536)
   ? fromArgv : Number(process.env.PORT || 8080);
