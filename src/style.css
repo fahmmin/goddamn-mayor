@@ -1,4 +1,4 @@
-/* OBSICITY - HUD skin. Owned by the ui agent. Pairs with src/ui.js.
+/* MAYOR - HUD skin. Owned by the ui agent. Pairs with src/ui.js.
    Late-night New York from a rooftop: dark glass, monospace numbers. */
 
 :root {
@@ -587,7 +587,7 @@ button:disabled, button[aria-disabled="true"] { cursor: not-allowed; }
 .w-actions .w-btn { padding: 8px 10px; font-size: 11.5px; }
 
 
-/* ==== OBSICITY shell =====================================================
+/* ==== MAYOR shell =====================================================
    A train window onto the city. The frame never moves; the city outside it
    does, driven by scroll. What shows through the aperture is the live
    renderer underneath - there is no video layer and no second canvas.
@@ -606,9 +606,23 @@ button:disabled, button[aria-disabled="true"] { cursor: not-allowed; }
   font-style: italic; font-weight: 400; font-display: swap;
   src: url('fonts/instrument-serif-italic.woff2') format('woff2');
 }
+/* Jaro, self-hosted rather than pulled from fonts.googleapis.com. The page's
+   CSP is default-src 'self' and CONTRACT.md forbids external fonts, so the
+   Google <link> tags would need both a style-src and a font-src exemption to
+   render a single typeface. A 19KB file in the repo needs neither, works
+   offline, and cannot change under us. Latin subset only - the UI is English.
+   One weight: Jaro ships 400 and a variable optical size, nothing else. */
+@font-face {
+  font-family: 'Jaro';
+  font-style: normal; font-weight: 400; font-display: swap;
+  src: url('fonts/jaro.woff2') format('woff2');
+}
 
 :root {
   --obs-serif: 'Instrument Serif', Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+  /* The display face. Titles and the wordmark only - never body copy, never
+     the HUD, which is dense tabular data Jaro would wreck. */
+  --obs-display: 'Jaro', 'Arial Black', 'Segoe UI', system-ui, sans-serif;
   --obs-ink: #ffffff;
   --obs-dim: rgba(255, 255, 255, .72);
   --obs-gold: #e2ab4c;
@@ -684,8 +698,14 @@ body.obs-still .obs-car { animation: none; transform: scale(1.22); }
   padding: 22px 30px; gap: 18px; pointer-events: none;
 }
 .obs-nav > * { pointer-events: auto; }
-.obs-mark { font-size: 23px; letter-spacing: .4px; color: #fff; text-decoration: none; cursor: pointer; }
-.obs-mark-c { font-style: italic; color: var(--obs-gold); }
+.obs-mark {
+  font-family: var(--obs-display); font-size: 21px; letter-spacing: .6px;
+  color: #fff; text-decoration: none; cursor: pointer;
+}
+/* Jaro ships one upright weight and no italic, so the accent here is colour
+   alone. Asking for italic would get a synthesised oblique, which shears a
+   heavy display face into mush. */
+.obs-mark-c { color: var(--obs-gold); }
 .obs-links {
   display: flex; align-items: center; gap: 4px;
   padding: 5px 7px; border-radius: 999px;
@@ -726,13 +746,17 @@ body.obs-still .obs-car { animation: none; transform: scale(1.22); }
   text-shadow: 0 1px 12px rgba(0, 0, 0, .95);
 }
 .obs-title {
-  margin: 0; font-weight: 400; line-height: .9; letter-spacing: -1px;
-  font-size: clamp(58px, 10vw, 124px);
+  margin: 0; font-family: var(--obs-display); font-weight: 400;
+  line-height: .78; letter-spacing: -.03em;
+  font-size: clamp(48px, 11vw, 192px);
+  font-optical-sizing: auto;
+  text-transform: uppercase;
   text-shadow: 0 2px 46px rgba(0, 0, 0, .75);
 }
-.obs-title em { font-style: italic; color: var(--obs-gold); }
+.obs-title em { font-style: normal; color: var(--obs-gold); }
 .obs-stop {
-  margin: 0; font-weight: 400; line-height: 1; letter-spacing: -.4px;
+  margin: 0; font-family: var(--obs-display); font-weight: 400;
+  line-height: 1; letter-spacing: -.02em; text-transform: uppercase;
   font-size: clamp(34px, 5.2vw, 62px);
   text-shadow: 0 2px 34px rgba(0, 0, 0, .8);
 }
@@ -850,7 +874,7 @@ body.obs-still .obs-hint { animation: none; }
    enough that it overflows the aperture upward and collides with the nav.
    Height queries are the ones that matter for a full-bleed screen. */
 @media (max-height: 760px) {
-  .obs-title { font-size: clamp(40px, 7.5vh, 78px); }
+  .obs-title { font-size: clamp(40px, 8.5vh, 104px); }
   .obs-stop { font-size: clamp(28px, 5.5vh, 50px); }
   .obs-body { font-size: 14px; margin-top: 12px; }
   .obs-scene { padding-bottom: 9vh; }
@@ -859,7 +883,7 @@ body.obs-still .obs-hint { animation: none; }
 }
 @media (max-height: 560px) {
   .obs-hint, .obs-note, .obs-foot { display: none; }
-  .obs-title { font-size: clamp(32px, 7vh, 54px); }
+  .obs-title { font-size: clamp(30px, 7vh, 60px); }
   .obs-body { font-size: 12.5px; line-height: 1.5; }
   .obs-btn { padding: 9px 22px; font-size: 14px; }
 }

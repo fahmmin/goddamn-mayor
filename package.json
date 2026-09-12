@@ -1,7 +1,7 @@
 {
-  "name": "obsicity",
+  "name": "goddamn-mayor",
   "version": "0.1.0",
-  "description": "OBSICITY - an isometric city you can underwrite. Built for ETHOnline 2026.",
+  "description": "I'm the Goddamn Mayor - an isometric city you can underwrite. Built for ETHOnline 2026.",
   "author": "Cyrene",
   "license": "MIT",
   "scripts": {
@@ -15,5 +15,5 @@
     "chain:verify": "node chain/verify-gate.js",
     "chain:push": "node chain/push-city.js"
   },
-  "productName": "Obsicity"
+  "productName": "I'm the Goddamn Mayor"
 }

@@ -1,4 +1,4 @@
-/* OBSICITY - the shell: a train window onto the city, then the menu.
+/* MAYOR - the shell: a train window onto the city, then the menu.
  *
  * The conceit, ported from the Lumora design: you are sitting inside a
  * carriage. The window frame never moves. What moves is the city outside it,
@@ -51,7 +51,7 @@ window.MM = window.MM || {};
      that exists. tx/ty are tile coords, z is renderer.scale, hour sets the
      light. See src/demo.js:49-62. */
   var STOPS = [
-    { key: 'city', title: 'Obsicity', kicker: 'AN ISOMETRIC CITY THAT ANSWERS TO ITS MARKET',
+    { key: 'city', title: "I'm the Goddamn Mayor", kicker: 'AN ISOMETRIC CITY THAT ANSWERS TO ITS MARKET',
       body: 'You are the Mayor. Four years, a treasury, and a city that will tell you loudly when you get it wrong.',
       tx: 24, ty: 24, z: 0.40, hour: 17, hero: true },
 
@@ -107,7 +107,7 @@ window.MM = window.MM || {};
     var root = el('div', 'obs-shell', document.body);
     this.root = root;
     root.setAttribute('role', 'dialog');
-    root.setAttribute('aria-label', 'Obsicity');
+    root.setAttribute('aria-label', "I'm the Goddamn Mayor");
 
     /* The carriage: the original overlay from the design, self-hosted. Its
        three windows are genuine alpha-0 holes - verified on the pixels, not
@@ -127,8 +127,8 @@ window.MM = window.MM || {};
     var nav = el('header', 'obs-nav', root);
     var mark = on(el('a', 'obs-mark', nav), function () { self.scrollTo(0); });
     mark.href = 'javascript:void 0';
-    el('span', 'obs-mark-o', mark, 'Obsi');
-    el('em', 'obs-mark-c', mark, 'city');
+    el('span', 'obs-mark-o', mark, 'GODDAMN ');
+    el('em', 'obs-mark-c', mark, 'MAYOR');
 
     var links = el('nav', 'obs-links liquid-glass', nav);
     [['How to play', 'how'], ['The chain', 'chain'], ['Settings', 'settings'], ['Credits', 'credits']]
@@ -149,8 +149,8 @@ window.MM = window.MM || {};
       el('div', 'obs-kicker', box, s.kicker);
       if (s.hero) {
         var h1 = el('h1', 'obs-title', box);
-        el('span', null, h1, 'Obsi');
-        el('em', null, h1, 'city');
+        el('span', null, h1, 'IM THE GODDAMN ');
+        el('em', null, h1, 'MAYOR');
       } else {
         el('h2', 'obs-stop', box, s.title);
       }
@@ -417,7 +417,7 @@ window.MM = window.MM || {};
 
     chain: function (box) {
       el('h2', null, box, 'The chain');
-      el('p', 'lede', box, 'Obsicity is a city you can underwrite. Nine districts each issue shares, and share value tracks the land value the simulation already computes every game-day.');
+      el('p', 'lede', box, 'This is a city you can underwrite. Nine districts each issue shares, and share value tracks the land value the simulation already computes every game-day.');
       var g = el('div', 'obs-grid', box);
       [['Every office is a name', 'mayor.cityhall.eth is held, not owned. It expires with the term and cannot be sold, because an office cannot be sold.'],
         ['No name, no write', 'The only way city data reaches the chain asks ENS a live question first. When the term ends, the city stops reporting on its own.'],

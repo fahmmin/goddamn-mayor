@@ -233,10 +233,16 @@ need(MM.sky && typeof MM.sky.draw === 'function', 'MM.sky.draw');
   for (const L of MM.lots.lots) byAnchor.set(L.x0 + ',' + L.y0, L);
   let pinned = 0, badWater = 0;
   for (const L of MM.lots.lots) if (L.pinned) pinned++;
+  /* Every entry of demo.js's PLOTS table, and the count below asserts it is
+     every one - so a landmark added to the city without being added here is a
+     failure, not a silent pass. */
   const WANT = [['airport', 1, 1], ['wind', 26, 1], ['marina', 36, 6], ['stadium', 1, 26],
     ['hospital', 6, 26], ['funfair', 1, 31], ['fire', 6, 31], ['police', 6, 33],
     ['depot', 11, 31], ['port', 30, 37], ['power', 21, 41], ['solar', 16, 41],
-    ['hero', 21, 21]];
+    ['hero', 21, 21],
+    // the wonders, one to a district
+    ['pyramid', 31, 11], ['arcde', 16, 16], ['clock', 11, 16], ['pagoda', 26, 26],
+    ['arena', 16, 26]];
   for (const [arch, x, y] of WANT) {
     const L = byAnchor.get(x + ',' + y);
     need(!!L && L.arch === arch && L.pinned,

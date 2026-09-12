@@ -36,7 +36,7 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, () => console.log('OBSICITY  ->  http://localhost:' + PORT));
+server.listen(PORT, () => console.log("I'M THE GODDAMN MAYOR  ->  http://localhost:" + PORT));
 
 /* main.js requires this file to run the desktop build against a real origin
  * rather than file://, and closes the server on quit. */

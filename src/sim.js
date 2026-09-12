@@ -1,4 +1,4 @@
-/* OBSICITY - simulation. Owned by the sim agent. */
+/* MAYOR - simulation. Owned by the sim agent. */
 window.MM = window.MM || {};
 (function (MM) {
   'use strict';

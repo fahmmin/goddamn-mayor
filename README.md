@@ -1,4 +1,4 @@
-# OBSICITY
+# I'M THE GODDAMN MAYOR
 
 An isometric New York city-builder that you can underwrite. Runs in a browser tab next to your IDE.
 

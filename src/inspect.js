@@ -1,4 +1,4 @@
-/* OBSICITY - the inspector.
+/* MAYOR - the inspector.
  *
  * Hover anything and it tells you its name. Click it and it opens its record.
  *

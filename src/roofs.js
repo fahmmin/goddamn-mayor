@@ -1,4 +1,4 @@
-/* OBSICITY - rooftop detail.
+/* MAYOR - rooftop detail.
    MM.roofs.draw(ctx, o) paints everything sitting on a building's roof plane:
    parapet, solar, HVAC, skylights, gardens, water towers, helipads, markings.
 

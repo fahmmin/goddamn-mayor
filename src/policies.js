@@ -1,4 +1,4 @@
-/* OBSICITY - policies. Owned by the content agent. */
+/* MAYOR - policies. Owned by the content agent. */
 window.MM = window.MM || {};
 (function (MM) {
   'use strict';

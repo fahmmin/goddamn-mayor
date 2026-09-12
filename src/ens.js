@@ -1,4 +1,4 @@
-/* OBSICITY - the city's namespace.
+/* MAYOR - the city's namespace.
  *
  * Every thing in the city has a name, and the name is ENS.
  *
