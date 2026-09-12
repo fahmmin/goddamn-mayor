@@ -29,8 +29,19 @@ const root = (D.root && D.root.name) || process.env.CITY_ROOT || 'cityhall.eth';
 
 const cfg = {
   chainId: 11155111,
-  rpc: (process.env.SEPOLIA_RPC_URL || '').startsWith('http')
-    ? process.env.SEPOLIA_RPC_URL : 'https://ethereum-sepolia-rpc.publicnode.com',
+  /* Deliberately the PUBLIC endpoint, not SEPOLIA_RPC_URL.
+   *
+   * This file is served to every visitor, so anything in it is published.
+   * The deploy scripts need a paid Alchemy key for throughput and reliable
+   * receipts; the browser does a handful of light reads every ten seconds
+   * and the public node covers that comfortably. Publishing the paid key to
+   * buy nothing would just hand strangers the quota - and a judge opening
+   * devtools is exactly the kind of visitor who would notice.
+   *
+   * Override with WEB3_PUBLIC_RPC if the public node is rate-limiting during
+   * judging; use a key that is domain-restricted, never the deploy key. */
+  rpc: (process.env.WEB3_PUBLIC_RPC || '').startsWith('http')
+    ? process.env.WEB3_PUBLIC_RPC : 'https://ethereum-sepolia-rpc.publicnode.com',
   root,
   officeLabel: 'mayor',
   registry: D.registry && D.registry.address,
@@ -44,6 +55,19 @@ const cfg = {
   privyAppId: process.env.PRIVY_APP_ID || '',
   privyClientId: process.env.PRIVY_CLIENT_ID || ''
 };
+
+/* config.json is SERVED TO BROWSERS. The app id and client id are public by
+ * design; the app secret and the deployer key are not, and one careless line
+ * here would publish them to every visitor. Fail loudly rather than ship it. */
+const SECRETS = ['PRIVY_APP_SECRET', 'DEPLOYER_PRIVATE_KEY'];
+const blob = JSON.stringify(cfg);
+for (const name of SECRETS) {
+  const v = (process.env[name] || '').trim();
+  if (v && v.length > 8 && blob.includes(v)) {
+    console.error('\n  REFUSING TO WRITE: ' + name + ' would be published in web3/config.json.\n');
+    process.exit(1);
+  }
+}
 
 const missing = ['oracle', 'token'].filter(k => !cfg[k]);
 if (missing.length) {

@@ -35,12 +35,16 @@ for (const line of fs.readFileSync(path.join(HERE, '..', '.env'), 'utf8').split(
   const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*?)\s*$/);
   if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
 }
-const KEY = (process.env.DEPLOYER_PRIVATE_KEY || '').trim();
-if (!/^0x[0-9a-fA-F]{64}$/.test(KEY)) {
+/* Accept the key with or without 0x - exporting from a wallet gives you one
+ * form, a generator the other, and a format nit is a poor reason to fail a
+ * deploy at 2am. */
+const RAW_KEY = (process.env.DEPLOYER_PRIVATE_KEY || '').trim().replace(/^0x/, '');
+if (!/^[0-9a-fA-F]{64}$/.test(RAW_KEY)) {
   console.error('\n  DEPLOYER_PRIVATE_KEY is missing or not a 32-byte hex key.');
-  console.error('  Put a FRESH Sepolia key in .env (0x + 64 hex chars) and fund it.\n');
+  console.error('  Put a FRESH Sepolia key in .env (64 hex chars, 0x optional) and fund it.\n');
   process.exit(1);
 }
+const KEY = '0x' + RAW_KEY;
 const RPC = (process.env.SEPOLIA_RPC_URL || '').startsWith('http')
   ? process.env.SEPOLIA_RPC_URL : 'https://ethereum-sepolia-rpc.publicnode.com';
 const ROOT_NAME = (process.env.CITY_ROOT || 'cityhall.eth').trim();

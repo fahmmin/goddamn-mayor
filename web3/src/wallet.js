@@ -257,10 +257,25 @@ export async function mountWallet (opts) {
   try {
     await privy.initialize();
     mountSecureIframe();
+  } catch (e) {
+    ui.status && (ui.status.textContent = 'wallet unavailable');
+    console.warn('[privy] init failed', e);
+    return;
+  }
+
+  /* Restoring a session is a SEPARATE try. A first-time visitor has no tokens
+   * in storage and Privy reports that by throwing missing_or_invalid_token -
+   * which is the single most common way this code path is reached, not a
+   * failure. Folding it in with initialize() showed every new judge "wallet
+   * unavailable" on the one screen that has to work in sixty seconds. */
+  try {
     const { user } = await privy.user.get();
     if (user) await ensureWallet();             // returning visitor, no prompt
   } catch (e) {
-    ui.status && (ui.status.textContent = 'wallet unavailable');
-    console.warn('[privy]', e);
+    const code = e && (e.code || e.error);
+    if (!/missing_or_invalid_token|No tokens found/i.test(String(code) + String(e && e.message))) {
+      console.warn('[privy] session restore failed', e);
+    }
   }
+  render();
 }
