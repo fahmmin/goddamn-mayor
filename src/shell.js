@@ -178,15 +178,20 @@ window.MM = window.MM || {};
       if (s.punch) el('p', 'obs-punch', box, s.punch);
 
       if (s.hero) {
+        /* Two doors, always. One of them costs an email and gives you a city
+           with your name on it; the other costs nothing and shows you the
+           city running. Continue appears beside them only once there is
+           something to continue. */
         var cta = el('div', 'obs-cta', box);
-        self._primary = on(el('button', 'obs-btn primary', cta, 'Enter the city'), function () { self.play(); });
-        self._secondary = on(el('button', 'obs-btn', cta, 'New city'), function () { self.newCity(); });
+        self._primary = on(el('button', 'obs-btn primary', cta, 'Be the Mayor'), function () { self.beTheMayor(); });
+        self._secondary = on(el('button', 'obs-btn', cta, 'Start demo'), function () { self.startDemo(); });
+        self._resumeBtn = on(el('button', 'obs-btn ghost', cta, 'Continue'), function () { self.play(); });
         self._resumeNote = el('div', 'obs-note', box, '');
         el('div', 'obs-hint', box, 'scroll to ride the line');
       }
       if (s.last) {
         var cta2 = el('div', 'obs-cta', box);
-        on(el('button', 'obs-btn primary', cta2, 'Take the office'), function () { self.play(); });
+        on(el('button', 'obs-btn primary', cta2, 'Take the office'), function () { self.beTheMayor(); });
       }
       return { sec: sec, stop: s, box: box };
     });
@@ -341,6 +346,8 @@ window.MM = window.MM || {};
     var s = MM.state, r = MM.renderer;
     this.mode = mode || 'title';
     this.open = true;
+    this._flying = false;               // cancels a flight still in the air
+    this.root.classList.remove('leaving');
     if (s) { this._speed = s.speed || 1; s.speed = 0; this._hour = s.tick; }
     /* Borrow the camera, remember exactly where it was. Resuming a paused
        game must not teleport the player to wherever the ride ended. */
@@ -391,37 +398,103 @@ window.MM = window.MM || {};
     requestAnimationFrame(zero);
   };
 
+  // ---- the doors ----------------------------------------------------------
+
+  Shell.prototype._hasSave = function () {
+    var s = MM.state;
+    return !!(s && (s.day || 0) > 1);
+  };
+
+  /* Door one. Phase 3 puts the Privy login in front of this; until then the
+     fork is what opens, which is the same screen either way.
+     The primary button doubles as Resume when the shell was opened over a
+     game in progress, so the mode check lives here rather than in a second
+     click handler that would have to be swapped in and out. */
+  Shell.prototype.beTheMayor = function () {
+    if (this.mode === 'pause') { this.play(); return; }
+    this.showPanel('fork');
+  };
+
+  /* Door two. No wallet, no email, no choice to make - the city that is
+     already loaded, entered. Phase 7 attaches the guided tour here. */
+  Shell.prototype.startDemo = function () { this.play(); };
+
+  /* Chosen from the fork. newGame mutates the live state in place, because
+     game.js closes over it - see src/demo.js. */
+  Shell.prototype._begin = function (kind) {
+    if (MM.newGame) MM.newGame(kind);
+    this.showPanel(null);
+    this.play();
+  };
+
+  // ---- leaving: the flight ------------------------------------------------
+
+  var FLY_MS = 950;
+
+  /* The handoff, and the reason the landing page had to live in this document.
+     The renderer has been drawing the city the whole time the shell was up, so
+     "open the app" is not a navigation - it is the same camera continuing to
+     move. Carriage and copy fade, the camera flies from wherever the ride
+     ended to wherever play resumes, and the light travels with it so the hour
+     does not cut. There is no page load and no cache rebuild to hide. */
   Shell.prototype.play = function () {
-    var s = MM.state, r = MM.renderer;
+    var self = this, s = MM.state, r = MM.renderer;
+    if (this._flying) return;
+
+    /* Input goes back immediately: this is a camera move, not a modal, and
+       nobody should have to wait out an animation to start playing. */
     this.open = false;
+    if (this.lenis) this.lenis.stop();
+    this.root.classList.add('leaving');
+    if (MM.audio) { MM.audio.play('ui'); if (MM.audio.ambient) MM.audio.ambient(true); }
+
+    var to = this._cam;
+    if (!r || !to) { this._land(); return; }
+
+    var from = { ox: r.ox, oy: r.oy, scale: r.scale };
+    var hourFrom = s ? (s.tick | 0) : 0;
+    var hourTo = this._hour == null ? hourFrom : this._hour;
+    var t0 = performance.now();
+    this._flying = true;
+
+    function step (now) {
+      if (!self._flying) return;                 // show() cancelled us
+      var k = ease(clamp((now - t0) / FLY_MS, 0, 1));
+      r.ox = lerp(from.ox, to.ox, k);
+      r.oy = lerp(from.oy, to.oy, k);
+      r.scale = lerp(from.scale, to.scale, k);
+      if (r.clampCamera) r.clampCamera();
+      if (s) s.tick = Math.round(lerp(hourFrom, hourTo, k)) % 24;
+      if (k < 1) requestAnimationFrame(step);
+      else { self._flying = false; self._land(); }
+    }
+    requestAnimationFrame(step);
+  };
+
+  /* Touch down. The HUD's fade is keyed to body.obs-open, so dropping the
+     class here rather than at take-off is what makes it arrive as the camera
+     settles instead of over the top of the flight. */
+  Shell.prototype._land = function () {
+    var s = MM.state, r = MM.renderer;
+    this._flying = false;
     this.root.hidden = true;
+    this.root.classList.remove('leaving');
     document.body.classList.remove('obs-open');
     if (s) { s.speed = this._speed || 1; if (this._hour != null) s.tick = this._hour; }
     if (r && this._cam) { r.ox = this._cam.ox; r.oy = this._cam.oy; r.scale = this._cam.scale; }
-    if (MM.audio) { MM.audio.play('ui'); if (MM.audio.ambient) MM.audio.ambient(true); }
   };
 
   Shell.prototype.pause = function () { this.show('pause'); };
 
-  Shell.prototype.newCity = function () {
-    if (this._confirmNew) { if (MM.clearSave) MM.clearSave(); location.reload(); return; }
-    this._confirmNew = true;
-    this._secondary.textContent = 'Erase this city?';
-    this._secondary.classList.add('armed');
-    var self = this;
-    setTimeout(function () {
-      self._confirmNew = false;
-      if (self._secondary) { self._secondary.textContent = 'New city'; self._secondary.classList.remove('armed'); }
-    }, 3200);
-  };
-
   Shell.prototype._sync = function () {
     var s = MM.state;
-    var started = !!(s && (s.day || 0) > 1);
-    this._primary.textContent = this.mode === 'pause' ? 'Resume' : (started ? 'Continue' : 'Enter the city');
-    this._secondary.hidden = !started;
-    this._navEnter.textContent = this.mode === 'pause' ? 'Resume' : 'Enter';
-    this._resumeNote.textContent = (s && started)
+    var started = this._hasSave();
+    var paused = this.mode === 'pause';
+    this._primary.textContent = paused ? 'Resume' : 'Be the Mayor';
+    this._secondary.hidden = paused;
+    this._resumeBtn.hidden = paused || !started;
+    this._navEnter.textContent = paused ? 'Resume' : 'Enter';
+    this._resumeNote.textContent = (s && started && !paused)
       ? 'Day ' + (s.day | 0) + '  ·  ' + (s.pop | 0).toLocaleString() + ' residents  ·  ' +
         Math.round(s.approval || 0) + '% approval'
       : '';
@@ -430,6 +503,36 @@ window.MM = window.MM || {};
   // ---- panels -------------------------------------------------------------
 
   var PANELS = {
+    /* The fork. Two ways to hold the office, and they are genuinely different
+       games: one is an empty block, the other is a built-out city you did not
+       build and now answer for. Both already existed as flags in demo.js -
+       this is a surface over them, not new game logic. */
+    fork: function (box) {
+      var self = this;
+      el('h2', null, box, 'Take the office');
+      el('p', 'lede', box, 'Two ways in. Both of them end up with your name on the city.');
+
+      var ch = el('div', 'obs-choices', box);
+
+      var a = on(el('button', 'obs-choice wide', ch), function () { self._begin('fresh'); });
+      el('strong', null, a, 'Break ground');
+      el('span', null, a, 'One road, a few lots and sixty thousand dollars. Nothing here is anyone else’s fault.');
+
+      var b = on(el('button', 'obs-choice wide', ch), function () { self._begin('showcase'); });
+      el('strong', null, b, 'Take over City Hall');
+      el('span', null, b, 'Inherit the built-out city mid-term - nine districts, an airport, a port, and every decision somebody else already made.');
+
+      if (this._hasSave()) {
+        var s = MM.state;
+        el('p', 'fine', box, 'Either one replaces the city you have now - day ' + (s.day | 0) +
+          ', ' + (s.pop | 0).toLocaleString() + ' residents.');
+        var c = el('div', 'obs-choices', box);
+        var k = on(el('button', 'obs-choice wide', c), function () { self.showPanel(null); self.play(); });
+        el('strong', null, k, 'Keep playing the one I have');
+        el('span', null, k, 'Back to the city already in progress.');
+      }
+    },
+
     how: function (box) {
       el('h2', null, box, 'How to play');
       el('p', 'lede', box, 'The one rule that matters: nothing grows without a road. Zone next to roads, or you are paying upkeep on empty lots.');
@@ -546,7 +649,7 @@ window.MM = window.MM || {};
     var self = this;
     on(el('button', 'obs-close', box, '×'), function () { self.showPanel(null); })
       .setAttribute('aria-label', 'Close');
-    PANELS[name](box);
+    PANELS[name].call(this, box);
     host.scrollTop = 0;
   };
 

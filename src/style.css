@@ -807,6 +807,37 @@ body.obs-still .obs-car { animation: none; transform: scale(1.22); }
 .obs-btn.primary { background: #fff; border-color: #fff; color: #10161a; }
 .obs-btn.primary:hover { background: rgba(255, 255, 255, .9); }
 .obs-btn.armed { border-color: var(--rose); color: #ffd9d4; background: rgba(187, 85, 76, .3); }
+/* Third door, quieter than the other two: it is only ever an alternative to
+   a decision already made, never the decision itself. */
+.obs-btn.ghost {
+  border-color: transparent; background: none; color: rgba(255, 255, 255, .62);
+  padding-left: 14px; padding-right: 14px; text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, .25); text-underline-offset: 5px;
+}
+.obs-btn.ghost:hover { color: #fff; background: none; text-decoration-color: rgba(255, 255, 255, .7); }
+
+/* ---- leaving ----
+   The flight out. Everything the shell drew fades while the camera keeps
+   moving underneath it; the canvas below has been live the whole time, so
+   there is nothing to load and nothing to cover up. pointer-events goes
+   first, so a stray wheel event cannot drive apply() into the flight. */
+.obs-shell.leaving { pointer-events: none; }
+.obs-shell.leaving .obs-car,
+.obs-shell.leaving .obs-vignette,
+.obs-shell.leaving .obs-scroll,
+.obs-shell.leaving .obs-nav,
+.obs-shell.leaving .obs-ledger,
+.obs-shell.leaving .obs-foot {
+  opacity: 0; transition: opacity .42s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .obs-shell.leaving .obs-car,
+  .obs-shell.leaving .obs-vignette,
+  .obs-shell.leaving .obs-scroll,
+  .obs-shell.leaving .obs-nav,
+  .obs-shell.leaving .obs-ledger,
+  .obs-shell.leaving .obs-foot { transition: none; }
+}
 .obs-note {
   margin-top: 14px; font-family: var(--ui); font-size: 10.5px;
   letter-spacing: 1.4px; color: rgba(255, 255, 255, .6); text-transform: uppercase; min-height: 13px;

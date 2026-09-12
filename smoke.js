@@ -254,6 +254,37 @@ need(MM.sky && typeof MM.sky.draw === 'function', 'MM.sky.draw');
   need(pinned === WANT.length, 'every landmark pinned exactly once (' + pinned + ')');
   need(badWater === 0, 'no landmark plot sits in the river');
 
+  /* MM.newGame swaps cities without a reload, and it MUST do it in place.
+     game.js holds `const state` in a closure - the frame loop, every input
+     handler and the UI all point at that one object - so a newGame that
+     assigned a fresh object would leave the game simulating the old city
+     while the screen showed the new one. render.js and lots.js key their
+     caches to the typed-array buffers and to s.rev, so those have to survive
+     too. Identity is the whole contract here, which is what this asserts. */
+  {
+    const live = MM.createState();
+    MM.state = live;
+    const grid0 = live.grid, level0 = live.level, pow0 = live.pow;
+    const rev0 = live.rev || 0;
+    const townsBefore = MM.count(live, T.COM);
+
+    const back = MM.newGame('showcase');
+    need(back === live, 'newGame returns the same state object it was given');
+    need(MM.state === live, 'newGame mutates in place - game.js closes over this object');
+    need(live.grid === grid0 && live.level === level0 && live.pow === pow0,
+      'newGame keeps the typed-array buffers render.js and lots.js cache against');
+    need(live.day === 612, 'newGame("showcase") loads the built-out city (day ' + live.day + ')');
+    need(MM.count(live, T.COM) > townsBefore, 'newGame("showcase") actually rewrote the grid');
+    need((live.rev || 0) > rev0, 'newGame bumps s.rev so the static cache rebuilds');
+    need(live.pending === null && live.gameOver === null, 'newGame clears pending and gameOver');
+
+    MM.newGame('fresh');
+    need(live.day === 1 && live.treasury === 60000,
+      'newGame("fresh") returns to the starter block (day ' + live.day + ')');
+    need(live.grid === grid0, 'newGame("fresh") keeps the buffers too');
+    MM.state = null;
+  }
+
   need(Object.keys(MM.lots.ARCH).length >= 30, 'lots.js exposes the full archetype set (' +
     Object.keys(MM.lots.ARCH).length + ')');
   const used = new Set(MM.lots.lots.map(L => L.arch));

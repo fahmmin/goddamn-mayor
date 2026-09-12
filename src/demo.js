@@ -219,6 +219,45 @@ window.MM = window.MM || {};
 
   MM.buildDemoCity = build;
 
+  /* Start a different city without reloading the page.
+   *
+   * This has to mutate the state object rather than replace it, and that is
+   * not a style choice. game.js holds `const state` in a closure: the frame
+   * loop, every input handler and the UI all reference that one object.
+   * Assigning MM.state a fresh object would leave the game simulating the old
+   * city forever while the shell showed the new one. game.js is the lead's
+   * file and the contract forbids editing it, so in place is the only door -
+   * and it is the right one anyway, because every cache downstream is keyed
+   * to s.rev, which makes one bump the whole invalidation.
+   *
+   *   kind 'fresh'     the starter block - a road, a few lots, $60k
+   *        'showcase'  the built-out city, inherited mid-term
+   */
+  function newGame (kind) {
+    var s = MM.state;
+    if (!s) return null;
+    var src = kind === 'fresh' ? MM.createState() : build();
+
+    /* Typed arrays by .set(), never by assignment. render.js diffs a per-tile
+       signature against these exact buffers to find its dirty rect, and
+       lots.js caches a plan over them; handing either a different object is
+       how you get a city that renders the one before it. */
+    s.grid.set(src.grid);
+    s.level.set(src.level);
+    s.pow.set(src.pow);
+    for (var k in src) {
+      if (k === 'grid' || k === 'level' || k === 'pow') continue;
+      s[k] = src[k];
+    }
+    s.rev = (s.rev || 0) + 1;      // the renderer's static cache is now wrong
+    s.pending = null;
+    s.gameOver = null;
+    MM.saveState(s);
+    return s;
+  }
+
+  MM.newGame = newGame;
+
   if (ON) {
     MM.demo = { loadState: MM.loadState, saveState: MM.saveState, sim: MM.sim, mode: MODE };
 
