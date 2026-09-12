@@ -1,0 +1,131 @@
+# I'M THE GODDAMN MAYOR - the city, indexed.
+#
+# The vaults are stock OpenZeppelin ERC4626, deliberately: nothing overrides
+# totalAssets(), so Deposit and Withdraw are the canonical events and the shape
+# below is the standard vault shape rather than a bespoke one. The city
+# entities sit BESIDE that, not on top of it - a tool that understands ERC-4626
+# can read Vault, Account and Position without knowing this game exists.
+#
+# Everything here answers a question the RPC cannot answer cheaply. A district's
+# valuation today is one eth_call; its valuation over ninety days is ninety
+# archive calls, and one wallet's position across nine vaults is nine round
+# trips. Both are one query here. That is the entire justification for the
+# subgraph, and it is why DistrictSnapshot exists at all.
+
+# ---------------------------------------------------------------- the vaults
+
+type Vault @entity(immutable: false) {
+  "The vault address."
+  id: Bytes!
+  "Index into MM.districts.LIST. Never reordered - it is the onchain id."
+  districtId: Int!
+  "e.g. riverside.cityhall.eth"
+  ensName: String!
+  "CityUSD."
+  asset: Bytes!
+
+  totalAssets: BigInt!
+  totalShares: BigInt!
+  "totalAssets / totalShares, or 1 while the vault is empty."
+  sharePrice: BigDecimal!
+
+  "Lifetime flows, so a vault's history is legible without replaying events."
+  depositedTotal: BigInt!
+  withdrawnTotal: BigInt!
+  "Net of settlement: positive when this administration has paid out."
+  settledTotal: BigInt!
+
+  positions: [Position!]! @derivedFrom(field: "vault")
+  events: [VaultEvent!]! @derivedFrom(field: "vault")
+  snapshots: [DistrictSnapshot!]! @derivedFrom(field: "vault")
+}
+
+type Account @entity(immutable: false) {
+  "The holder's address."
+  id: Bytes!
+  positions: [Position!]! @derivedFrom(field: "account")
+}
+
+"One holder, one vault. id is account-vault."
+type Position @entity(immutable: false) {
+  id: ID!
+  account: Account!
+  vault: Vault!
+  shares: BigInt!
+  depositedAssets: BigInt!
+  withdrawnAssets: BigInt!
+  updatedAt: BigInt!
+}
+
+enum VaultEventKind { DEPOSIT WITHDRAW REMIT SETTLE }
+
+type VaultEvent @entity(immutable: true) {
+  id: Bytes!
+  vault: Vault!
+  kind: VaultEventKind!
+  "Absent for REMIT and SETTLE - those are the oracle moving money, not a holder."
+  account: Bytes
+  assets: BigInt!
+  shares: BigInt!
+  "The vault's total after this event, so a chart needs no running sum."
+  assetsAfter: BigInt!
+  block: BigInt!
+  timestamp: BigInt!
+  tx: Bytes!
+}
+
+# ---------------------------------------------------------------- the city
+
+"One oracle push. Immutable: a term's record is not editable, which is the point."
+type CitySnapshot @entity(immutable: true) {
+  id: Bytes!
+  day: Int!
+  "Basis points - 7912 is 79.12%."
+  approval: Int!
+  "0 = AAA through 8 = D."
+  rating: Int!
+  pop: Int!
+  "The address holding mayor.cityhall.eth when this was written."
+  mayor: Bytes!
+  timestamp: BigInt!
+  tx: Bytes!
+}
+
+"One district, one push. This is the series the sparkline draws."
+type DistrictSnapshot @entity(immutable: true) {
+  id: Bytes!
+  districtId: Int!
+  "Null only if a push lands before the vaults are wired."
+  vault: Vault
+  city: CitySnapshot
+  day: Int!
+  nav: BigInt!
+  pop: Int!
+  land: Int!
+  "Hundredths - 250 is level 2.50."
+  level: Int!
+  timestamp: BigInt!
+}
+
+"Whoever has held the office. A term is a name, so this is the roll of names."
+type Mayor @entity(immutable: false) {
+  id: Bytes!
+  pushes: Int!
+  firstDay: Int!
+  lastDay: Int!
+  firstSeen: BigInt!
+  lastSeen: BigInt!
+}
+
+"One row. Saves a client two queries to find out whether anything is indexed yet."
+type City @entity(immutable: false) {
+  id: Bytes!
+  lastDay: Int!
+  lastApproval: Int!
+  lastRating: Int!
+  lastPop: Int!
+  pushes: Int!
+  "Faucet draws - the cheapest proxy for how many people have tried this."
+  wallets: Int!
+  updatedAt: BigInt!
+}

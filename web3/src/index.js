@@ -13,8 +13,13 @@ import { createPublicClient, http, formatUnits, parseUnits } from 'viem';
 import { sepolia } from 'viem/chains';
 import { mountWallet, getWallet, login, currentUser } from './wallet.js';
 import { ORACLE_ABI, VAULT_ABI, ERC20_ABI } from './abi.js';
+import * as graph from './graph.js';
 
 const POLL_MS = 10000;          // how often we ask the chain for a new snapshot
+/* History changes only when the oracle is written, which is once per term
+   interval - polling it at the snapshot rate would be a request a second for
+   a series that moves once a week. */
+const HISTORY_MS = 60000;
 const PUSH_EVERY_DAYS = 30;     // game-days between oracle writes
 
 let cfg = null;
@@ -96,6 +101,23 @@ async function snapshot () {
 }
 
 const RATINGS = ['AAA', 'AA', 'A', 'BBB', 'BB', 'B', 'CCC', 'CC', 'D'];
+
+/* The indexed history, which is the one thing the RPC above genuinely cannot
+ * produce: a district's valuation over ninety days is ninety archive calls,
+ * and the public Sepolia endpoints do not keep the state to answer them. One
+ * request here returns all nine series.
+ *
+ * Never awaited by the snapshot and never fatal. An unconfigured or dead
+ * subgraph leaves ch.history null, and ui.js falls back to the sample it was
+ * already drawing - so the panel degrades to what it used to be rather than
+ * to an empty chart. */
+async function history () {
+  const ch = ensureChain();
+  if (!ch || !graph.isConfigured()) return;
+  const h = await graph.queryHistory(90);
+  if (h) { ch.history = h; ch.historyAt = performance.now(); }
+  ch.graph = { on: true, url: graph.health().url, failures: graph.health().failures };
+}
 
 async function canPush (who) {
   try {
@@ -238,6 +260,11 @@ async function boot () {
 
   mountWallet({ cfg, onChange: snapshot, api: { pushNow, deposit, drawFaucet, balances } });
 
+  if (graph.configure(cfg)) {
+    await history();
+    setInterval(history, HISTORY_MS);
+  }
+
   await snapshot();
   setInterval(snapshot, POLL_MS);
 
@@ -249,7 +276,7 @@ async function boot () {
     if ((state.day || 0) - lastPushDay >= PUSH_EVERY_DAYS) pushNow(false);
   }, 4000);
 
-  window.MM_CHAIN = { snapshot, pushNow, deposit, drawFaucet, balances, login, currentUser, cfg };
+  window.MM_CHAIN = { snapshot, history, pushNow, deposit, drawFaucet, balances, login, currentUser, graph, cfg };
 }
 
 boot().catch(e => console.warn('[chain] boot failed, game continues:', e));

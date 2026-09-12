@@ -6,6 +6,9 @@ window.MM = window.MM || {};
   const SVGNS = 'http://www.w3.org/2000/svg';
   const NF = new Intl.NumberFormat('en-US');
   const HIST = 7;                     // sparkline window, in game days
+  /* The indexed series is longer because it can be: it is fetched, not
+     accumulated, so there is no cost to asking for more of it. */
+  const MKT_HIST = 40;
   const OVERLAYS = ['none', 'value', 'traffic', 'pollution'];
   const SPEEDS = [
     { n: 0, label: '❚❚', tip: 'Pause  [Space]' },
@@ -943,9 +946,16 @@ window.MM = window.MM || {};
     const age = ch && ch.at ? now - ch.at : Infinity;
     const mode = !ch || !ch.everLive ? 'local' : (age > CHAIN_STALE_MS ? 'stale' : 'live');
 
-    setText(this._mktBadge, mode);
+    /* "graph" outranks "live": both mean the chain answered, but only one of
+       them means the chart is the indexed record rather than a sample taken
+       in this tab. That distinction is the honest thing to show. */
+    const label = (this._mktIndexed && mode === 'live') ? 'graph' : mode;
+    setText(this._mktBadge, label);
     setCls(this._mktBadge, 'live', mode === 'live');
     setCls(this._mktBadge, 'stale', mode === 'stale');
+    setAttr(this._mktBadge, 'title', this._mktIndexed
+      ? 'Valuations indexed from the oracle by The Graph'
+      : 'Sampled in this browser - the subgraph is not configured');
     if (MM.districts) setText(this._mktRoot, MM.districts.ROOT);
 
     // office + rating: the chain's answer when there is one, the sim's otherwise
@@ -987,17 +997,35 @@ window.MM = window.MM || {};
     }
   };
 
-  /* Sampled once per game-day alongside the stat tiles, not per frame. */
+  /* Sampled once per game-day alongside the stat tiles, not per frame.
+   *
+   * Two possible series, and the difference is the whole reason the subgraph
+   * exists. ch.history is what the oracle actually wrote, indexed - ninety
+   * days of it, one request, and it survives a reload because it was never
+   * ours. Without it this falls back to a seven-day rolling sample taken in
+   * this browser, which is real but forgets everything the moment the tab
+   * closes. The panel degrades to the chart it used to draw, never to an
+   * empty one. */
   UI.prototype._sampleMarket = function (s) {
     if (!this._mktRows || !this._mktRows.length) return;
     const ch = s.chain;
     const fresh = !!(ch && ch.districts && ch.districts.length === this._mktRows.length);
     const local = (!fresh && MM.districts) ? MM.districts.stats(s) : null;
     this._mktLocal = local;                     // cached for update(); see _updateMarket
+    const indexed = ch && ch.history;
+    this._mktIndexed = false;
+
     for (let i = 0; i < this._mktRows.length; i++) {
       const r = this._mktRows[i];
-      r.hist.push(fresh ? num(ch.districts[i].nav, 0) : (local ? num(local[i].nav, 0) : 0));
-      if (r.hist.length > HIST) r.hist.shift();
+      const series = indexed && indexed[i];
+      if (series && series.length > 1) {
+        /* Trim from the front: a chart of the last N pushes, not the first. */
+        r.hist = series.length > MKT_HIST ? series.slice(-MKT_HIST) : series.slice();
+        this._mktIndexed = true;
+      } else {
+        r.hist.push(fresh ? num(ch.districts[i].nav, 0) : (local ? num(local[i].nav, 0) : 0));
+        if (r.hist.length > HIST) r.hist.shift();
+      }
       setAttr(r.line, 'points', sparkPoints(r.hist));
     }
   };

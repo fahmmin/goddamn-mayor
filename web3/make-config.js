@@ -53,6 +53,9 @@ const cfg = {
     registry: D.districts && D.districts[l] && D.districts[l].registry
   })),
   privyAppId: process.env.PRIVY_APP_ID || '',
+  // Empty until `npm --prefix subgraph run deploy` returns a query URL.
+  // Absent is a normal state: the sparkline falls back to a local sample.
+  subgraph: process.env.SUBGRAPH_URL || '',
   privyClientId: process.env.PRIVY_CLIENT_ID || ''
 };
 
@@ -81,4 +84,5 @@ console.log('    root    ' + cfg.root);
 console.log('    oracle  ' + cfg.oracle);
 console.log('    vaults  ' + cfg.vaults.length + '/9');
 console.log('    privy   ' + (cfg.privyAppId ? 'configured' : 'MISSING - wallet UI stays off'));
+console.log('    graph   ' + (cfg.subgraph ? cfg.subgraph : 'not deployed - charts fall back to a local sample'));
 console.log('');
