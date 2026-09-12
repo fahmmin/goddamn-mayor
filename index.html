@@ -50,6 +50,10 @@
   <script src="src/ui.js"></script>
   <script src="src/demo.js"></script>
   <script src="src/game.js"></script>
+  <!-- Lenis, vendored rather than fetched: a local file keeps CSP at
+       default-src 'self', works offline and works inside Electron. The shell
+       falls back to native scroll if this tag is removed. -->
+  <script src="vendor/lenis.min.js"></script>
   <!-- The shell loads after game.js because it drives MM.state and
        MM.renderer, which game.js creates. It never edits either. -->
   <script src="src/shell.js"></script>

@@ -586,188 +586,294 @@ button:disabled, button[aria-disabled="true"] { cursor: not-allowed; }
 .w-actions { display: flex; gap: 7px; }
 .w-actions .w-btn { padding: 8px 10px; font-size: 11.5px; }
 
+
 /* ==== OBSICITY shell =====================================================
-   The Lumora brief - full-bleed motion behind a quiet serif overlay - with
-   the live city standing in for the video, and a system serif stack standing
-   in for the webfont. The module contract forbids external fonts outright:
-   a Google Fonts link would silently fail under default-src 'self' and the
-   screen still has to look right, so the fallback IS the design. */
+   A train window onto the city. The frame never moves; the city outside it
+   does, driven by scroll. What shows through the aperture is the live
+   renderer underneath - there is no video layer and no second canvas.
+
+   Instrument Serif is SELF-HOSTED, not linked. The module contract bans
+   external fonts because CSP is default-src 'self' and the app must run from
+   a desktop shell with no network; two woff2 files in src/fonts cost 43KB and
+   settle it, so the design keeps the typeface it was drawn in. */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal; font-weight: 400; font-display: swap;
+  src: url('fonts/instrument-serif.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic; font-weight: 400; font-display: swap;
+  src: url('fonts/instrument-serif-italic.woff2') format('woff2');
+}
+
 :root {
-  --obs-serif: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
-  --obs-ink: #f4f1ea;
-  --obs-dim: #b9b3a6;
-  --obs-gold: #d9a441;
+  --obs-serif: 'Instrument Serif', Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+  --obs-ink: #ffffff;
+  --obs-dim: rgba(255, 255, 255, .72);
+  --obs-gold: #e2ab4c;
+  --obs-car: #0a0c0d;          /* carriage interior */
 }
 
 body.obs-open { overflow: hidden; }
-/* The HUD stays mounted and keeps ticking - it is simply not the thing you
-   are looking at. Hiding rather than unmounting means no rebuild on resume. */
 body.obs-open #hud { opacity: 0; pointer-events: none; }
 #hud { transition: opacity .45s ease; }
 
 .obs-shell {
   position: fixed; inset: 0; z-index: 40;
-  display: flex; flex-direction: column;
   font-family: var(--obs-serif); color: var(--obs-ink);
-  animation: obs-in .7s ease both;
+  animation: obs-in .8s ease both;
 }
 @keyframes obs-in { from { opacity: 0; } to { opacity: 1; } }
 
-/* Two scrims: a vertical one so the type always has ground, and a vignette
-   so the eye lands in the middle. The canvas keeps drawing underneath. */
-/* Three layers, and the middle one is the one that matters. The city is at
-   its busiest exactly where the wordmark sits, so a vignette that clears the
-   centre leaves the kicker unreadable over rooftops. A soft dark ellipse
-   under the type gives it ground without flattening the skyline around it. */
-.obs-scrim {
-  position: absolute; inset: 0; pointer-events: none;
-  background:
-    radial-gradient(58% 46% at 50% 46%, rgba(8, 14, 12, .74) 0%, rgba(8, 14, 12, .5) 55%, rgba(8, 14, 12, 0) 100%),
-    radial-gradient(120% 90% at 50% 45%, rgba(8, 14, 12, 0) 30%, rgba(8, 14, 12, .72) 100%),
-    linear-gradient(180deg, rgba(8, 14, 12, .82) 0%, rgba(8, 14, 12, .4) 34%,
-                    rgba(8, 14, 12, .54) 66%, rgba(8, 14, 12, .92) 100%);
+/* ---- the carriage ------------------------------------------------------
+   The overlay from the original design, self-hosted. object-fit:cover so it
+   fills any viewport, and the scale(1.03) in the keyframes is load-bearing
+   rather than decorative: without it the 6px lift would expose a bare edge
+   at the bottom of the frame on every bob. */
+.obs-car {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  /* cover, then scaled past it. The overlay is 1.79:1, so how much carriage
+     you see depends entirely on the viewport's aspect: on a 2.1:1 pane cover
+     crops vertically and the frame reads thick and obvious, while on a 1.6:1
+     laptop it shows almost the whole plate and the frame thins to a sliver
+     with the city bleeding edge to edge. Scaling past cover pins the frame at
+     a usable weight on every shape, and it is also what hides the bob. */
+  object-fit: cover; object-position: center 45%;
+  pointer-events: none; z-index: 2; user-select: none;
+  animation: train-bob 3s ease-in-out infinite;
+  will-change: transform;
+}
+/* The original numbers, unchanged. */
+@keyframes train-bob {
+  0%, 100% { transform: translateY(0px) scale(1.22); }
+  50%      { transform: translateY(-6px) scale(1.22); }
+}
+body.obs-still .obs-car { animation: none; transform: scale(1.22); }
+
+/* Sits BELOW the carriage so it only ever darkens the view through the
+   glass, never the seats and sill, which are already dark and lit. */
+.obs-vignette {
+  position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  background: radial-gradient(58% 50% at 50% 40%,
+    rgba(6, 9, 10, .1) 0%, rgba(6, 9, 10, .42) 62%, rgba(6, 9, 10, .72) 100%);
 }
 
-.obs-shell > *:not(.obs-scrim) { position: relative; z-index: 1; }
+/* ---- Lumora's liquid glass, unchanged in spirit ---- */
+.liquid-glass {
+  background: rgba(255, 255, 255, .01);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, .1);
+  position: relative; overflow: hidden;
+}
+.liquid-glass::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1.4px;
+  background: linear-gradient(180deg,
+    rgba(255, 255, 255, .45) 0%, rgba(255, 255, 255, .15) 20%,
+    rgba(255, 255, 255, 0) 40%, rgba(255, 255, 255, 0) 60%,
+    rgba(255, 255, 255, .15) 80%, rgba(255, 255, 255, .45) 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  pointer-events: none;
+}
 
-/* ---- top bar ---- */
+/* ---- nav ---- */
 .obs-nav {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 5;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 26px 34px; gap: 20px; flex: none;
+  padding: 22px 30px; gap: 18px; pointer-events: none;
 }
-.obs-mark { font-size: 19px; letter-spacing: 5px; font-weight: 400; }
-.obs-mark-o { color: var(--obs-ink); }
-.obs-mark-c { color: var(--obs-gold); }
-.obs-links { display: flex; gap: 4px; flex-wrap: wrap; }
+.obs-nav > * { pointer-events: auto; }
+.obs-mark { font-size: 23px; letter-spacing: .4px; color: #fff; text-decoration: none; cursor: pointer; }
+.obs-mark-c { font-style: italic; color: var(--obs-gold); }
+.obs-links {
+  display: flex; align-items: center; gap: 4px;
+  padding: 5px 7px; border-radius: 999px;
+}
 .obs-link {
-  font-family: var(--obs-serif); font-size: 13.5px; letter-spacing: .4px;
-  color: var(--obs-dim); padding: 7px 13px; border-radius: 999px;
-  border: 1px solid transparent; transition: color .2s, border-color .2s, background .2s;
+  font-family: var(--ui); font-size: 12.5px; letter-spacing: .1px;
+  color: rgba(255, 255, 255, .88); padding: 7px 13px; border-radius: 999px;
+  transition: color .2s, background .2s;
 }
-.obs-link:hover { color: var(--obs-ink); border-color: rgba(244, 241, 234, .22); background: rgba(244, 241, 234, .06); }
+.obs-link:hover { color: #fff; background: rgba(255, 255, 255, .12); }
+.obs-enter { background: #fff; color: #10161a; font-weight: 600; }
+.obs-enter:hover { background: rgba(255, 255, 255, .9); color: #10161a; }
 
-/* ---- hero ---- */
-.obs-hero {
-  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  text-align: center; padding: 10px 30px; gap: 2px; min-height: 0;
+/* ---- the scroller ------------------------------------------------------
+   Lenis drives this element, not the page: html and body are overflow:hidden
+   and #app is fixed, so there is no document scroll to hijack. */
+.obs-scroll {
+  position: absolute; inset: 0; z-index: 3;
+  overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-width: none;
 }
+.obs-scroll::-webkit-scrollbar { width: 0; height: 0; }
+/* Centred, then pushed up, so the copy lands inside the main window rather
+   than on the sill and the seats below it. The window's centre in the
+   overlay sits near 42% of the height, which is what the offset targets. */
+.obs-scene {
+  height: 100vh; display: flex; align-items: center; justify-content: center;
+  padding: 0 22vw 15vh; text-align: center;
+}
+.obs-copy {
+  max-width: 46ch; will-change: opacity, transform;
+  display: flex; flex-direction: column; align-items: center;
+}
+
 .obs-kicker {
-  font-family: var(--ui); font-size: 10px; letter-spacing: 3.4px;
-  color: #d6d0c3; text-transform: uppercase; margin-bottom: 16px;
-  text-shadow: 0 1px 10px rgba(8, 14, 12, .95);
+  font-family: var(--ui); font-size: 9.5px; letter-spacing: 3.4px;
+  color: rgba(255, 255, 255, .72); text-transform: uppercase; margin-bottom: 14px;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, .95);
 }
 .obs-title {
-  margin: 0; font-weight: 400; line-height: .92; letter-spacing: -2px;
-  font-size: clamp(56px, 11vw, 132px);
-  text-shadow: 0 2px 40px rgba(8, 14, 12, .8), 0 1px 3px rgba(8, 14, 12, .5);
+  margin: 0; font-weight: 400; line-height: .9; letter-spacing: -1px;
+  font-size: clamp(58px, 10vw, 124px);
+  text-shadow: 0 2px 46px rgba(0, 0, 0, .75);
 }
 .obs-title em { font-style: italic; color: var(--obs-gold); }
-.obs-tag {
-  margin: 20px 0 0; max-width: 40ch; font-size: clamp(14px, 1.5vw, 17.5px);
-  line-height: 1.6; color: #cec8bb;
-  text-shadow: 0 1px 14px rgba(8, 14, 12, .9);
+.obs-stop {
+  margin: 0; font-weight: 400; line-height: 1; letter-spacing: -.4px;
+  font-size: clamp(34px, 5.2vw, 62px);
+  text-shadow: 0 2px 34px rgba(0, 0, 0, .8);
 }
-.obs-cta { display: flex; gap: 11px; margin-top: 30px; flex-wrap: wrap; justify-content: center; }
-.obs-btn {
-  font-family: var(--obs-serif); font-size: 15px; letter-spacing: .3px;
-  padding: 13px 30px; border-radius: 999px;
-  border: 1px solid rgba(244, 241, 234, .3); color: var(--obs-ink);
-  background: rgba(244, 241, 234, .05);
-  transition: background .2s, border-color .2s, transform .15s, color .2s;
-}
-.obs-btn:hover { background: rgba(244, 241, 234, .13); border-color: rgba(244, 241, 234, .5); transform: translateY(-1px); }
-.obs-btn.primary { background: var(--obs-gold); border-color: var(--obs-gold); color: #17201a; font-weight: 700; }
-.obs-btn.primary:hover { filter: brightness(1.08); background: var(--obs-gold); }
-.obs-btn.armed { border-color: var(--rose); color: #ffd9d4; background: rgba(187, 85, 76, .28); }
-.obs-note {
-  margin-top: 15px; font-family: var(--ui); font-size: 11px;
-  letter-spacing: 1.4px; color: var(--obs-dim); text-transform: uppercase; min-height: 14px;
+.obs-body {
+  margin: 16px 0 0; font-size: clamp(14px, 1.45vw, 17px); line-height: 1.62;
+  color: rgba(255, 255, 255, .84); text-shadow: 0 1px 16px rgba(0, 0, 0, .92);
 }
 
-/* ---- footer: vantages (Lumora's video switcher) + stats ---- */
+.obs-cta { display: flex; gap: 10px; margin-top: 26px; flex-wrap: wrap; justify-content: center; }
+.obs-btn {
+  font-family: var(--obs-serif); font-size: 16px; padding: 12px 30px; border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .34); color: #fff;
+  background: rgba(255, 255, 255, .06);
+  transition: background .2s, border-color .2s, transform .15s;
+}
+.obs-btn:hover { background: rgba(255, 255, 255, .16); border-color: rgba(255, 255, 255, .55); transform: translateY(-1px); }
+.obs-btn.primary { background: #fff; border-color: #fff; color: #10161a; }
+.obs-btn.primary:hover { background: rgba(255, 255, 255, .9); }
+.obs-btn.armed { border-color: var(--rose); color: #ffd9d4; background: rgba(187, 85, 76, .3); }
+.obs-note {
+  margin-top: 14px; font-family: var(--ui); font-size: 10.5px;
+  letter-spacing: 1.4px; color: rgba(255, 255, 255, .6); text-transform: uppercase; min-height: 13px;
+}
+.obs-hint {
+  margin-top: 22px; font-family: var(--ui); font-size: 9.5px; letter-spacing: 2.6px;
+  text-transform: uppercase; color: rgba(255, 255, 255, .42);
+  animation: obs-breathe 2.6s ease-in-out infinite;
+}
+@keyframes obs-breathe { 0%, 100% { opacity: .42; } 50% { opacity: .9; } }
+body.obs-still .obs-hint { animation: none; }
+
+/* ---- stop rail ---- */
+.obs-rail {
+  position: absolute; right: 26px; top: 50%; transform: translateY(-50%);
+  z-index: 5; display: flex; flex-direction: column; gap: 13px; align-items: flex-end;
+}
+.obs-dot {
+  width: 8px; height: 8px; border-radius: 50%; padding: 0;
+  background: rgba(255, 255, 255, .3); position: relative;
+  transition: background .25s, transform .25s;
+}
+.obs-dot:hover, .obs-dot.on { background: #fff; transform: scale(1.25); }
+.obs-dot-label {
+  position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
+  font-family: var(--ui); font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase;
+  color: rgba(255, 255, 255, .82); white-space: nowrap; opacity: 0;
+  transition: opacity .2s; pointer-events: none; text-shadow: 0 1px 8px rgba(0, 0, 0, .9);
+}
+.obs-dot:hover .obs-dot-label, .obs-dot.on .obs-dot-label { opacity: 1; }
+
+/* ---- footer ---- */
 .obs-foot {
-  flex: none; padding: 20px 34px 26px;
-  display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; flex-wrap: wrap;
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 5;
+  padding: 0 30px 20px; pointer-events: none;
 }
-.obs-vantage { display: flex; gap: 7px; flex-wrap: wrap; }
-.obs-chip {
-  font-family: var(--obs-serif); font-size: 12.5px; padding: 8px 15px; border-radius: 999px;
-  color: var(--obs-dim); border: 1px solid rgba(244, 241, 234, .18);
-  transition: color .2s, border-color .2s, background .2s;
-}
-.obs-chip:hover { color: var(--obs-ink); border-color: rgba(244, 241, 234, .4); }
-.obs-chip.on { color: #17201a; background: var(--obs-ink); border-color: var(--obs-ink); }
-.obs-stats { display: flex; gap: 20px; flex-wrap: wrap; justify-content: flex-end; }
+.obs-stats { display: flex; gap: 22px; flex-wrap: wrap; justify-content: center; }
 .obs-stat {
-  font-family: var(--ui); font-size: 10px; letter-spacing: 1.5px;
-  text-transform: uppercase; color: var(--obs-dim);
+  font-family: var(--ui); font-size: 9.5px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: rgba(255, 255, 255, .45);
 }
 
 /* ---- panels ---- */
-/* Specificity matters here: `.obs-shell > *:not(.obs-scrim)` above scores
-   higher than a bare `.obs-panel-host`, so it wins the `position` declaration
-   and pins this back into the column flow - the panel then sits BELOW the
-   hero instead of over it. Match that selector's weight to take it back. */
 .obs-shell > .obs-panel-host {
-  position: absolute; inset: 0; z-index: 2; overflow-y: auto;
-  background: rgba(8, 14, 12, .82);
-  display: flex; align-items: flex-start; justify-content: center;
-  padding: 48px 24px;
+  position: absolute; inset: 0; z-index: 9; overflow-y: auto;
+  background: rgba(6, 9, 10, .9);
+  display: flex; align-items: flex-start; justify-content: center; padding: 46px 22px;
 }
 .obs-panel {
   position: relative; width: min(760px, 100%);
-  background: rgba(18, 26, 22, .96); border: 1px solid rgba(244, 241, 234, .14);
+  background: rgba(17, 21, 23, .97); border: 1px solid rgba(255, 255, 255, .13);
   border-radius: 16px; padding: 34px 36px 38px;
   animation: obs-rise .35s ease both;
 }
 @keyframes obs-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
-.obs-panel h2 { margin: 0 0 6px; font-weight: 400; font-size: 30px; letter-spacing: -.5px; }
-.obs-panel h3 { margin: 0 0 5px; font-size: 14.5px; font-weight: 700; color: var(--obs-ink); }
+.obs-panel h2 { margin: 0 0 6px; font-weight: 400; font-size: 33px; letter-spacing: -.4px; }
+.obs-panel h3 { margin: 0 0 5px; font-family: var(--ui); font-size: 13.5px; font-weight: 700; color: #fff; }
 .obs-panel h3.sub {
-  margin: 26px 0 10px; font-family: var(--ui); font-size: 10px;
-  letter-spacing: 2.2px; text-transform: uppercase; color: var(--obs-dim); font-weight: 600;
+  margin: 26px 0 10px; font-family: var(--ui); font-size: 9.5px;
+  letter-spacing: 2.2px; text-transform: uppercase; color: rgba(255, 255, 255, .5); font-weight: 600;
 }
-.obs-panel p { margin: 0; color: var(--obs-dim); line-height: 1.62; font-size: 14px; }
-.obs-panel p.lede { font-size: 16px; line-height: 1.6; margin-bottom: 4px; }
-.obs-panel p.fine { margin-top: 20px; font-size: 12.5px; opacity: .72; }
+.obs-panel p { margin: 0; font-family: var(--ui); color: rgba(255, 255, 255, .68); line-height: 1.62; font-size: 13.5px; }
+.obs-panel p.lede { font-family: var(--obs-serif); font-size: 17px; line-height: 1.55; color: rgba(255, 255, 255, .8); }
+.obs-panel p.fine { margin-top: 20px; font-size: 12px; opacity: .6; }
 .obs-close {
-  position: absolute; top: 14px; right: 16px; font-size: 26px; line-height: 1;
-  color: var(--obs-dim); padding: 4px 10px; border-radius: 8px;
+  position: absolute; top: 12px; right: 15px; font-size: 27px; line-height: 1;
+  color: rgba(255, 255, 255, .6); padding: 4px 10px; border-radius: 8px;
 }
-.obs-close:hover { color: var(--obs-ink); background: rgba(244, 241, 234, .08); }
+.obs-close:hover { color: #fff; background: rgba(255, 255, 255, .09); }
 
-.obs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin-top: 20px; }
-.obs-card { padding: 16px 17px; border-radius: 11px; background: rgba(244, 241, 234, .05); border: 1px solid rgba(244, 241, 234, .09); }
-.obs-card p { font-size: 13px; }
+.obs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 13px; margin-top: 20px; }
+.obs-card { padding: 16px 17px; border-radius: 11px; background: rgba(255, 255, 255, .045); border: 1px solid rgba(255, 255, 255, .08); }
+.obs-card p { font-size: 12.5px; }
 
 .obs-keys { display: grid; grid-template-columns: auto 1fr; gap: 7px 18px; margin: 0; }
 .obs-keys dt {
-  font-family: var(--mono); font-size: 12px; color: var(--obs-ink);
-  background: rgba(244, 241, 234, .09); padding: 3px 9px; border-radius: 5px; white-space: nowrap;
+  font-family: var(--mono); font-size: 11.5px; color: #fff;
+  background: rgba(255, 255, 255, .1); padding: 3px 9px; border-radius: 5px; white-space: nowrap;
 }
-.obs-keys dd { margin: 0; color: var(--obs-dim); font-size: 13px; align-self: center; }
+.obs-keys dd { margin: 0; font-family: var(--ui); color: rgba(255, 255, 255, .68); font-size: 12.5px; align-self: center; }
 
 .obs-choices { display: flex; gap: 9px; flex-wrap: wrap; }
 .obs-choice {
   flex: 1 1 190px; text-align: left; padding: 13px 15px; border-radius: 11px;
-  border: 1px solid rgba(244, 241, 234, .14); background: rgba(244, 241, 234, .04);
+  border: 1px solid rgba(255, 255, 255, .13); background: rgba(255, 255, 255, .04);
   display: flex; flex-direction: column; gap: 3px; transition: border-color .18s, background .18s;
 }
-.obs-choice:hover { background: rgba(244, 241, 234, .09); }
-.obs-choice.on { border-color: var(--obs-gold); background: rgba(217, 164, 65, .14); }
-.obs-choice strong { font-size: 14px; font-weight: 700; }
-.obs-choice span { font-size: 11.5px; color: var(--obs-dim); line-height: 1.45; }
+.obs-choice:hover { background: rgba(255, 255, 255, .09); }
+.obs-choice.on { border-color: var(--obs-gold); background: rgba(226, 171, 76, .14); }
+.obs-choice strong { font-family: var(--ui); font-size: 13px; font-weight: 700; }
+.obs-choice span { font-family: var(--ui); font-size: 11px; color: rgba(255, 255, 255, .6); line-height: 1.45; }
 .obs-choice.wide { flex-basis: 100%; }
 
-@media (max-width: 760px) {
-  .obs-nav { padding: 18px 20px; }
-  .obs-links { gap: 0; }
-  .obs-link { padding: 6px 9px; font-size: 12.5px; }
-  .obs-foot { padding: 16px 20px 22px; justify-content: center; }
+/* Short viewports, not narrow ones. A 13-inch laptop with browser chrome, or
+   a docked window, lands near 600px of height - and the hero block is tall
+   enough that it overflows the aperture upward and collides with the nav.
+   Height queries are the ones that matter for a full-bleed screen. */
+@media (max-height: 760px) {
+  .obs-title { font-size: clamp(40px, 7.5vh, 78px); }
+  .obs-stop { font-size: clamp(28px, 5.5vh, 50px); }
+  .obs-body { font-size: 14px; margin-top: 12px; }
+  .obs-scene { padding-bottom: 9vh; }
+  .obs-cta { margin-top: 18px; }
+  .obs-kicker { margin-bottom: 10px; }
+}
+@media (max-height: 560px) {
+  .obs-hint, .obs-note, .obs-foot { display: none; }
+  .obs-title { font-size: clamp(32px, 7vh, 54px); }
+  .obs-body { font-size: 12.5px; line-height: 1.5; }
+  .obs-btn { padding: 9px 22px; font-size: 14px; }
+}
+
+@media (max-width: 900px) {
+  .obs-rail { display: none; }
   .obs-stats { display: none; }
+  .obs-nav { padding: 16px 18px; }
+  .obs-link { padding: 6px 10px; font-size: 11.5px; }
+  .obs-scene { padding: 0 10vw 12vh; }
   .obs-panel { padding: 26px 22px 30px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .obs-shell, .obs-panel { animation: none; }
+  .obs-car, .obs-hint { animation: none; }
   #hud { transition: none; }
 }

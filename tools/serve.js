@@ -17,7 +17,8 @@ const PORT = (Number.isInteger(fromArgv) && fromArgv > 0 && fromArgv < 65536)
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json',
-  '.png': 'image/png', '.ico': 'image/x-icon', '.svg': 'image/svg+xml'
+  '.png': 'image/png', '.ico': 'image/x-icon', '.svg': 'image/svg+xml',
+  '.woff2': 'font/woff2', '.woff': 'font/woff'
 };
 
 const server = http.createServer((req, res) => {
