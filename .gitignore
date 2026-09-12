@@ -13,3 +13,5 @@ web3/bundle.js
 .playwright-mcp/
 *.png
 !build/icon.png
+chain/build/
+chain/deployed.json

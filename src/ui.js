@@ -6,7 +6,6 @@ window.MM = window.MM || {};
   const SVGNS = 'http://www.w3.org/2000/svg';
   const NF = new Intl.NumberFormat('en-US');
   const HIST = 7;                     // sparkline window, in game days
-  const TUT_KEY = 'mamdani.tut.v1';
   const OVERLAYS = ['none', 'value', 'traffic', 'pollution'];
   const SPEEDS = [
     { n: 0, label: '❚❚', tip: 'Pause  [Space]' },
@@ -29,6 +28,57 @@ window.MM = window.MM || {};
     if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]);
     if (parent) parent.appendChild(n);
     return n;
+  }
+  function icon (parent, name) {
+    const paths = {
+      city: 'M3 21h18M5 21V10h5v11M10 21V3h8v18M7 13h1m-1 3h1m5-10h2m-2 4h2m-2 4h2',
+      hall: 'M2 9l10-6 10 6H2m2 12h16M6 11v7m6-7v7m6-7v7',
+      build: 'M14 4l6 6M3 21l4-1L20 7l-3-3L4 17l-1 4',
+      home: 'M3 11l9-8 9 8M6 9v12h12V9m-8 12v-7h4v7',
+      gear: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2',
+      close: 'M6 6l12 12M18 6L6 18',
+      people: 'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6M3 21v-3a6 6 0 0 1 12 0v3m2-14a3 3 0 0 1 0 6m1 3c3 0 3 3 3 5',
+      coin: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18m3 5h-5a2 2 0 0 0 0 4h4a2 2 0 0 1 0 4H9m3-10v12',
+      happy: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M8 9h.01M16 9h.01M8 14q4 5 8 0',
+      road: 'M7 3L3 21M17 3l4 18M12 3v3m0 3v3m0 3v3m0 3v1',
+      park: 'M12 2l-7 9h4l-6 7h18l-6-7h4l-7-9m0 16v4',
+      plus: 'M12 5v14M5 12h14', minus: 'M5 12h14'
+    };
+    const svg = svgEl('svg', { class: 'ui-icon', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.7', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' }, parent);
+    svgEl('path', { d: paths[name] || paths.city }, svg); return svg;
+  }
+  function buildIcon (parent, tile) {
+    const T = MM.TILE;
+    const svg = svgEl('svg', { class: 'build-icon', viewBox: '0 0 72 64', 'aria-hidden': 'true' }, parent);
+    const colors = {};
+    colors[T.RES] = ['#f3dfb6', '#b38b60', '#e16f51']; colors[T.COM] = ['#a6d2df', '#457d98', '#e5f4f3'];
+    colors[T.IND] = ['#dbc6ae', '#9e8870', '#deaa51']; colors[T.SCHOOL] = ['#f4d7a2', '#bd8850', '#e69d42'];
+    colors[T.CLINIC] = ['#edf1e6', '#96b5b3', '#40a5b4']; colors[T.GROCERY] = ['#f3e4cb', '#b6a48b', '#e26555'];
+    colors[T.CHILDCARE] = ['#e5daed', '#ab8dc0', '#9574b7']; colors[T.TOWER] = ['#e9efdf', '#91aa82', '#66aa73'];
+    const c = colors[tile] || ['#d9e2cf', '#6e9b69', '#7bb378'];
+    function path (d, fill) { svgEl('path', { d: d, fill: fill }, svg); }
+    path('M6 48L35 33 67 48 37 63Z', '#d8e7ce');
+    path('M6 48L37 61 67 47 67 51 37 64 6 51Z', '#94b08a');
+    if (tile === T.PARK) {
+      path('M30 49L43 42 49 46 35 55Z', '#eee4c5');
+      [[21,35,12],[44,24,15],[52,44,9]].forEach(function (p) {
+        svgEl('path', { d: 'M' + p[0] + ' ' + p[1] + 'v14', stroke: '#826945', 'stroke-width': 3 }, svg);
+        svgEl('circle', { cx: p[0], cy: p[1], r: p[2], fill: '#3e8c63' }, svg);
+        svgEl('circle', { cx: p[0] - 3, cy: p[1] - 3, r: p[2] * .7, fill: '#79b66a' }, svg);
+      }); return;
+    }
+    if (tile === T.ROAD || tile === T.BUS || tile === T.BULLDOZE) {
+      path('M8 44L40 27 65 41 34 59Z', '#667577'); path('M20 44l7-4 3 2-7 4m13-7 7-4 3 2-7 4', '#f2e4b1');
+      if (tile === T.ROAD) return;
+      path('M18 30L41 19 55 26 32 38Z', tile === T.BUS ? '#7bc6dd' : '#efb64a');
+      path('M18 30v13l14 7V38Z', tile === T.BUS ? '#3896b6' : '#d49227'); path('M32 38L55 26v13L32 50Z', tile === T.BUS ? '#246b8b' : '#a57936');
+      path('M35 39l17-9v6l-17 9Z', '#cce3df'); return;
+    }
+    path('M16 22L37 11 58 21 37 33Z', c[2]); path('M16 22v26l21 11V33Z', c[0]); path('M37 33l21-12v25L37 59Z', c[1]);
+    path('M14 22L37 9 61 21 58 24 37 14 17 25Z', c[2]);
+    path('M21 30l4 2v6l-4-2m7-2 4 2v6l-4-2m-7 0 4 2v6l-4-2m7-2 4 2v6l-4-2M42 35l4-2v6l-4 2m7-10 4-2v6l-4 2m-7 6 4-2v6l-4 2m7-10 4-2v6l-4 2', '#608b98');
+    if (tile === T.CLINIC) path('M28 24v5l-5-2v5l5 2v5l5 2v-5l5 2v-5l-5-2v-5Z', '#e16d5f');
+    if (tile === T.GROCERY) path('M14 35l23 11v6L14 41Z', '#d96552');
   }
   // Every write below is diffed against the last written value: update() runs
   // at 60fps and must not touch the DOM unless something actually moved.
@@ -116,6 +166,7 @@ window.MM = window.MM || {};
     this._overlay = 'none';
     this._resetArmed = 0;
     this._evtCb = null;
+    this._touch = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
 
     root.textContent = '';
     root.classList.add('mm-root');
@@ -123,11 +174,13 @@ window.MM = window.MM || {};
     this._buildTop(root);
     this._buildTools(root);
     this._buildRail(root, state);
+    this._buildMarket(root);
     this._buildDock(root);
     this._buildToasts(root);
     this._buildModal(root);
     this._buildOver(root);
     this._buildTutorial(root);
+    this._buildControls(root);
 
     this.update(state);
   }
@@ -150,6 +203,7 @@ window.MM = window.MM || {};
     const bar = el('div', 'mm-bar', root);
 
     const brand = el('div', 'brand', bar);
+    icon(el('div', 'city-seal', brand), 'city');
     const mark = el('div', 'mark', brand);
     el('span', 'm1', mark, 'MAYOR');
     el('span', 'm2', mark, 'MAMDANI');
@@ -161,7 +215,8 @@ window.MM = window.MM || {};
     for (let i = 0; i < STATS.length; i++) {
       const st = STATS[i];
       const t = el('div', 'tile k-' + st.key + ' c-' + st.c + (st.wide ? ' wide' : ''), stats);
-      el('div', 'tl', t, st.label);
+      icon(el('span', 'stat-icon', t), { cash: 'coin', pop: 'people', app: 'happy', rent: 'home', traf: 'road', unemp: 'city' }[st.key]);
+      el('div', 'tl', t, { cash: 'City funds', pop: 'Residents', app: 'Approval', rent: 'Rent index', traf: 'Traffic', unemp: 'Unemployed' }[st.key]);
       const row = el('div', 'tv', t);
       const rec = { root: t, val: el('span', 'num', row), sub: el('span', 'sub', row) };
       const sv = svgEl('svg', { class: 'spark', viewBox: '0 0 60 18', preserveAspectRatio: 'none' }, t);
@@ -178,6 +233,7 @@ window.MM = window.MM || {};
       const s = SPEEDS[i];
       const b = el('button', 'sb', seg, s.label);
       b.title = s.tip;
+      b.setAttribute('aria-label', s.tip);
       const n = s.n;
       const self = this;
       on(b, function () { self._call('onSpeed', n); });
@@ -187,24 +243,77 @@ window.MM = window.MM || {};
 
   // ---- left toolbar -----------------------------------------------------
   UI.prototype._buildTools = function (root) {
-    const box = el('div', 'mm-tools', root);
-    el('div', 'head', box, 'BUILD');
+    const box = this._catalog = el('div', 'mm-tools', root);
+    box.id = 'build-catalog'; box.setAttribute('aria-label', 'Build catalog');
+    this._catalogOpen = window.innerWidth >= 700;
+    box.hidden = !this._catalogOpen;
+    const head = el('div', 'catalog-head', box);
+    const title = el('div', null, head);
+    el('div', 'catalog-kicker', title, 'A city for everyone');
+    el('h2', null, title, 'Build your city');
+    const self = this;
+    const close = on(el('button', 'icon-btn', head), function () { self._setCatalog(false); });
+    close.setAttribute('aria-label', 'Close build catalog'); icon(close, 'close');
+    const tabs = el('div', 'catalog-tabs', box);
+    tabs.setAttribute('aria-label', 'Building categories');
+    const T = MM.TILE;
+    const groups = [
+      { name: 'Zones', icon: 'city', tiles: [T.RES, T.COM, T.IND] },
+      { name: 'Services', icon: 'hall', tiles: [T.SCHOOL, T.CLINIC, T.GROCERY, T.CHILDCARE, T.TOWER] },
+      { name: 'Transport', icon: 'road', tiles: [T.ROAD, T.BUS] },
+      { name: 'Parks', icon: 'park', tiles: [T.PARK] }
+    ];
+    this._groups = groups;
+    groups.forEach(function (g, i) {
+      g.button = on(el('button', 'category', tabs), function () { self._category(i); });
+      icon(g.button, g.icon); el('span', null, g.button, g.name);
+      g.button.setAttribute('aria-pressed', 'false');
+    });
+    this._categoryTitle = el('div', 'category-title', box);
+    const grid = el('div', 'tool-grid', box);
     const list = MM.BUILDABLE || [];
     const info = MM.TILE_INFO || {};
     const doze = MM.TILE ? MM.TILE.BULLDOZE : 99;
-    const self = this;
     for (let i = 0; i < list.length; i++) {
       const t = list[i];
       const inf = info[t] || { name: 'Tile ' + t, cost: 0, key: '' };
-      if (t === doze) el('div', 'sep', box);
-      const b = el('button', 'tool' + (t === doze ? ' doze' : ''), box);
+      const b = el('button', 'tool' + (t === doze ? ' doze' : ''), t === doze ? box : grid);
+      buildIcon(b, t);
       el('span', 'k', b, String(inf.key || '').toUpperCase());
-      el('span', 'tn', b, inf.name);
+      const names = {}; names[T.GROCERY] = 'City grocery'; names[T.CLINIC] = 'Health clinic'; names[T.SCHOOL] = 'Public school'; names[T.TOWER] = 'Social housing'; names[T.BUS] = 'Bus stop';
+      el('span', 'tn', b, names[t] || inf.name);
       el('span', 'tc', b, '$' + NF.format(inf.cost || 0));
       b.title = inf.name + ' - $' + (inf.cost || 0) + (inf.upkeep ? ', $' + inf.upkeep + '/day upkeep' : '') + '  [' + inf.key + ']';
-      on(b, function () { self._call('onSelect', t); });
+      b.setAttribute('aria-label', inf.name + ', $' + (inf.cost || 0));
+      on(b, function () {
+        if (b.getAttribute('aria-disabled') === 'true') { self.toast('Not enough city funds for ' + inf.name + '.', 'bad'); return; }
+        self._call('onSelect', t);
+        if (MM.renderer) MM.renderer.buildMode = true;
+        if (window.innerWidth < 700) self._setCatalog(false);
+      });
       this._tools.push({ b: b, tile: t, cost: inf.cost || 0 });
     }
+    const note = el('div', 'catalog-note', box);
+    icon(note, 'road'); el('span', null, note, 'Connect buildings to a road to help them grow.');
+    this._category(1);
+  };
+
+  UI.prototype._category = function (n) {
+    const g = this._groups[n]; this._categoryIndex = n;
+    this._groups.forEach(function (group, i) {
+      setCls(group.button, 'on', n === i); setAttr(group.button, 'aria-pressed', n === i ? 'true' : 'false');
+    });
+    this._tools.forEach(function (t) { t.b.hidden = t.tile !== MM.TILE.BULLDOZE && g.tiles.indexOf(t.tile) < 0; });
+    setText(this._categoryTitle, g.name + '  /  ' + g.tiles.length + ' available');
+  };
+  UI.prototype._setCatalog = function (open) {
+    this._catalogOpen = open; this._catalog.hidden = !open;
+    if (this._buildBtn) setAttr(this._buildBtn, 'aria-expanded', String(open));
+    if (open && this._rail) this._closeRail();
+  };
+  UI.prototype._closeRail = function () {
+    this._rail.classList.add('collapsed');
+    if (this._hallBtn) setAttr(this._hallBtn, 'aria-expanded', 'false');
   };
 
   // ---- right rail -------------------------------------------------------
@@ -214,12 +323,10 @@ window.MM = window.MM || {};
     this._rail = rail;
 
     const tabs = el('div', 'tabs', rail);
-    const collapse = this._collapseBtn = el('button', 'collapse', tabs, '›');
-    collapse.title = 'Collapse panel';
+    const collapse = this._collapseBtn = el('button', 'collapse', tabs, '×');
+    collapse.title = 'Close City Hall'; collapse.setAttribute('aria-label', 'Close City Hall');
     on(collapse, function () {
-      const c = !rail.classList.contains('collapsed');
-      rail.classList.toggle('collapsed', c);
-      collapse.textContent = c ? '‹' : '›';
+      self._closeRail();
     });
     const names = ['Policies', 'Feed', 'Budget'];
     this._tabs = [];
@@ -256,6 +363,13 @@ window.MM = window.MM || {};
       net: this._budRow(led, 'Net per day', 'net')
     };
     this._bud.net.row.classList.add('total');
+    el('div', 'sub', p2, 'CITY INDICATORS');
+    const metrics = el('div', 'ledger', p2);
+    this._cityMetrics = {};
+    for (let i = 3; i < STATS.length; i++) {
+      const st = STATS[i];
+      this._cityMetrics[st.key] = this._budRow(metrics, { rent: 'Rent index', traf: 'Traffic', unemp: 'Unemployment' }[st.key], 'metric').v;
+    }
     el('div', 'sub', p2, 'TAX RATES');
     const kinds = [['res', 'Residential'], ['com', 'Commercial'], ['ind', 'Industrial']];
     this._tax = {};
@@ -283,6 +397,8 @@ window.MM = window.MM || {};
       setCls(inp, 'hot', +inp.value > 14);
     }
     this._tab(0);
+    this._closeRail();
+    this._catalog.hidden = window.innerWidth < 700; this._catalogOpen = !this._catalog.hidden;
   };
 
   UI.prototype._budRow = function (parent, label, kind) {
@@ -297,7 +413,9 @@ window.MM = window.MM || {};
       setCls(this._panes[i], 'on', i === n);
     }
     this._rail.classList.remove('collapsed');
-    this._collapseBtn.textContent = '›';
+    this._collapseBtn.textContent = '×';
+    this._setCatalog(false);
+    if (this._hallBtn) setAttr(this._hallBtn, 'aria-expanded', 'true');
   };
 
   UI.prototype._buildPolicies = function () {
@@ -339,7 +457,7 @@ window.MM = window.MM || {};
     el('span', 'cap', ov, 'MAP');
     for (let i = 0; i < OVERLAYS.length; i++) {
       const name = OVERLAYS[i];
-      const b = el('button', 'ob', ov, name);
+      const b = el('button', 'ob', ov, name === 'none' ? 'City' : name);
       on(b, function () { self._overlay = name; self._syncOverlay(); self._call('onOverlay', name); });
       this._overlays.push({ b: b, name: name });
     }
@@ -361,7 +479,88 @@ window.MM = window.MM || {};
   };
 
   UI.prototype._syncOverlay = function () {
-    for (let i = 0; i < this._overlays.length; i++) setCls(this._overlays[i].b, 'on', this._overlays[i].name === this._overlay);
+    for (let i = 0; i < this._overlays.length; i++) {
+      const o = this._overlays[i], active = o.name === this._overlay;
+      setCls(o.b, 'on', active); setAttr(o.b, 'aria-pressed', String(active));
+    }
+  };
+
+  UI.prototype._buildControls = function (root) {
+    const self = this;
+    const actions = el('div', 'city-actions', root);
+    const hall = this._hallBtn = on(el('button', 'hall-btn', actions), function () {
+      if (self._rail.classList.contains('collapsed')) self._tab(0); else self._closeRail();
+    });
+    icon(hall, 'hall'); el('span', null, hall, 'City Hall'); hall.setAttribute('aria-expanded', 'false');
+    const settings = on(el('button', 'icon-btn settings-btn', actions), function () {
+      panel.hidden = !panel.hidden; setAttr(settings, 'aria-expanded', String(!panel.hidden));
+    });
+    icon(settings, 'gear'); settings.setAttribute('aria-label', 'Graphics settings'); settings.setAttribute('aria-expanded', 'false');
+    const panel = el('div', 'graphics-panel', root); panel.hidden = true;
+    el('h3', null, panel, 'Graphics');
+    el('p', null, panel, 'Find the right balance for your device.');
+    const modes = [['eco', 'Eco', 'Lower resolution, fewer moving details'], ['balanced', 'Balanced', 'Rich scenery, lighter on your browser'], ['high', 'High', 'Sharper on high-resolution displays']];
+    const qualityButtons = [];
+    modes.forEach(function (mode) {
+      const b = on(el('button', 'quality-choice', panel), function () {
+        if (MM.visuals) MM.visuals.setQuality(mode[0]);
+        syncQuality();
+      });
+      el('strong', null, b, mode[1]); el('span', null, b, mode[2]); qualityButtons.push({ b: b, mode: mode[0] });
+    });
+    function syncQuality () {
+      qualityButtons.forEach(function (q) {
+        const active = MM.visuals ? MM.visuals.quality === q.mode : q.mode === 'balanced';
+        setCls(q.b, 'on', active); setAttr(q.b, 'aria-pressed', String(active));
+      });
+    }
+    syncQuality();
+    let lastWidth = window.innerWidth;
+    window.addEventListener('resize', function () {
+      if (window.innerWidth < 700 && lastWidth >= 700) { self._setCatalog(false); self._closeRail(); }
+      lastWidth = window.innerWidth;
+    });
+    const camera = el('div', 'camera-controls', root);
+    [['plus', 'Zoom in', 1], ['minus', 'Zoom out', -1], ['home', 'Center city', 0]].forEach(function (c) {
+      const b = on(el('button', 'icon-btn', camera), function () {
+        const r = MM.renderer; if (!r) return;
+        if (c[2]) r.zoomAt(r.w * .5, r.h * .48, c[2]); else { r.stopPan(); r.centerOn(MM.GRID * .28, MM.GRID * .46); }
+      });
+      icon(b, c[0]); b.title = c[1]; b.setAttribute('aria-label', c[1]);
+    });
+    const build = this._buildBtn = on(el('button', 'build-toggle', root), function () { self._setCatalog(!self._catalogOpen); });
+    icon(build, 'build'); el('span', null, build, 'Build city');
+    build.setAttribute('aria-expanded', String(this._catalogOpen)); build.setAttribute('aria-controls', 'build-catalog');
+    const hint = el('div', 'placement-hint', root);
+    this._placementTitle = el('strong', null, hint, 'Explore your city');
+    this._placementText = el('span', null, hint, 'Drag to explore · Scroll to zoom');
+    const cancel = this._cancelBuild = on(el('button', 'cancel-build', hint, 'Done'), function () {
+      if (MM.renderer) MM.renderer.buildMode = false;
+    }); cancel.hidden = true;
+    const help = on(el('button', 'help-btn', root, '?'), function () { if (self._tutorial) self._tutorial.hidden = !self._tutorial.hidden; });
+    help.title = 'How to play'; help.setAttribute('aria-label', 'How to play');
+    const map = on(el('button', 'mobile-map', root, 'Map layers'), function () {
+      const open = !root.classList.contains('map-open'); setCls(root, 'map-open', open); setAttr(map, 'aria-expanded', String(open));
+    }); map.setAttribute('aria-expanded', 'false');
+    window.addEventListener('keydown', function (e) {
+      if (!self.eventOpen && !(e.target && /input|textarea|select/i.test(e.target.tagName))) {
+        for (let i = 0; i < self._tools.length; i++) {
+          const inf = MM.TILE_INFO[self._tools[i].tile];
+          if (inf && String(inf.key).toLowerCase() === e.key.toLowerCase() && MM.renderer) MM.renderer.buildMode = true;
+        }
+      }
+      if (e.key !== 'Escape' || self.eventOpen) return;
+      panel.hidden = true; setAttr(settings, 'aria-expanded', 'false');
+      setCls(root, 'map-open', false); setAttr(map, 'aria-expanded', 'false');
+      self._setCatalog(false); self._closeRail();
+      if (self._tutorial) self._tutorial.hidden = true;
+      if (MM.renderer) MM.renderer.buildMode = false;
+    });
+    // A focused button owns Space/Enter; do not also pause the simulation or
+    // zoom it through the window-level game shortcuts.
+    root.addEventListener('keydown', function (e) {
+      if (!self.eventOpen && e.target && e.target.tagName === 'BUTTON' && (e.key === ' ' || e.key === 'Enter')) e.stopPropagation();
+    });
   };
 
   // ---- toasts -----------------------------------------------------------
@@ -488,10 +687,8 @@ window.MM = window.MM || {};
 
   // ---- tutorial ---------------------------------------------------------
   UI.prototype._buildTutorial = function (root) {
-    let seen = false;
-    try { seen = localStorage.getItem(TUT_KEY) === '1'; } catch (e) { /* private mode */ }
-    if (seen) return;
     const card = el('div', 'mm-tut', root);
+    card.hidden = true; this._tutorial = card;
     el('div', 'th', card, 'FOUR THINGS, MR. MAYOR');
     const ol = el('ol', null, card);
     const lines = [
@@ -502,8 +699,7 @@ window.MM = window.MM || {};
     ];
     for (let i = 0; i < lines.length; i++) el('li', null, ol, lines[i]);
     on(el('button', 'ok', card, 'Got it'), function () {
-      card.parentNode.removeChild(card);
-      try { localStorage.setItem(TUT_KEY, '1'); } catch (e) { /* ignore */ }
+      card.hidden = true;
     });
   };
 
@@ -552,6 +748,138 @@ window.MM = window.MM || {};
   };
 
   // ---- the hot path -----------------------------------------------------
+  // ---- the market panel -------------------------------------------------
+  /* Nine districts, priced. The panel reads state.chain and nothing else -
+   * web3/bundle.js writes that object and stops, so the game never learns the
+   * network exists and smoke.js never has to load a bundle.
+   *
+   * Three data states, and the badge always says which one you are looking at:
+   *   live    a snapshot arrived from the chain inside CHAIN_STALE_MS
+   *   stale   the chain answered once and has gone quiet - last-known values
+   *   local   no snapshot ever arrived, so these are this browser's own sim
+   *
+   * "local" is labelled rather than hidden on purpose. An unlabelled number
+   * that looks onchain but is not would be the single worst thing this panel
+   * could do to the submission.
+   */
+  const CHAIN_STALE_MS = 30000;
+
+  UI.prototype._buildMarket = function (root) {
+    const panel = el('div', 'mm-market', root);
+    this._market = panel;
+    panel.setAttribute('aria-label', 'District market');
+
+    const head = el('div', 'mkt-head', panel);
+    const title = el('div', 'mkt-title', head);
+    el('span', 'mkt-t1', title, 'DISTRICT MARKET');
+    this._mktRoot = el('span', 'mkt-t2', title, MM.districts ? MM.districts.ROOT : '');
+    this._mktBadge = el('span', 'mkt-badge', head, 'local');
+
+    const term = el('div', 'mkt-term', panel);
+    this._mktOffice = el('span', 'mkt-office', term, '—');
+    this._mktRating = el('span', 'mkt-rating', term, '—');
+
+    const list = el('div', 'mkt-list', panel);
+    this._mktRows = [];
+    const dl = (MM.districts && MM.districts.LIST) || [];
+    for (let i = 0; i < dl.length; i++) {
+      const r = el('div', 'mrow', list);
+      const arrow = el('span', 'ma', r, '·');
+      const nm = el('span', 'mn', r, dl[i].ens || dl[i].key);
+      const nav = el('span', 'mv', r, '$0');
+      const chg = el('span', 'mc', r, '—');
+      const sv = svgEl('svg', { class: 'mspark', viewBox: '0 0 60 18', preserveAspectRatio: 'none' }, r);
+      const line = svgEl('polyline', { fill: 'none', 'stroke-width': '1.6', 'stroke-linejoin': 'round', 'stroke-linecap': 'round', points: '' }, sv);
+      nm.title = dl[i].name;
+      this._mktRows.push({ root: r, arrow: arrow, name: nm, nav: nav, chg: chg, line: line,
+        hist: [], shown: 0, target: 0, prev: 0 });
+    }
+
+    this._mktFoot = el('div', 'mkt-foot', panel, 'connect a wallet to underwrite a district');
+  };
+
+  /* Credit rating from the two things a lender would actually look at: how
+   * popular the administration is, and whether the city runs a surplus. Same
+   * inputs the sim already has, so it agrees with the HUD by construction. */
+  const RATINGS = ['AAA', 'AA', 'A', 'BBB', 'BB', 'B', 'CCC', 'CC', 'D'];
+  function ratingOf (s, d) {
+    const appr = num(s.approval, 50);
+    const net = num(d.net, 0);
+    const income = Math.max(1, num(s.dailyIncome, 1));
+    let score = appr / 100 * 6 + clamp(net / income, -1, 1) * 2;     // 0..8-ish
+    if ((s.treasury || 0) < 0) score -= 2;
+    return RATINGS[clamp(Math.round(8 - score), 0, 8)];
+  }
+
+  UI.prototype._updateMarket = function (s, d, now) {
+    if (!this._market) return;
+    const rows = this._mktRows;
+    if (!rows.length) return;
+
+    const ch = s.chain;
+    const fresh = !!(ch && ch.districts && ch.districts.length === rows.length);
+    const age = ch && ch.at ? now - ch.at : Infinity;
+    const mode = !ch || !ch.everLive ? 'local' : (age > CHAIN_STALE_MS ? 'stale' : 'live');
+
+    setText(this._mktBadge, mode);
+    setCls(this._mktBadge, 'live', mode === 'live');
+    setCls(this._mktBadge, 'stale', mode === 'stale');
+    if (MM.districts) setText(this._mktRoot, MM.districts.ROOT);
+
+    // office + rating: the chain's answer when there is one, the sim's otherwise
+    const rating = (ch && ch.rating) || ratingOf(s, d);
+    setText(this._mktRating, rating);
+    setCls(this._mktRating, 'bad', RATINGS.indexOf(rating) >= 4);
+
+    if (ch && ch.office && ch.office.expiry) {
+      const left = Math.max(0, Math.round((ch.office.expiry * 1000 - Date.now()) / 86400000));
+      setText(this._mktOffice, ch.office.label + '.' + (MM.districts ? MM.districts.ROOT : '') +
+        (ch.office.holder ? '  ·  ' + left + 'd left' : '  ·  vacant'));
+      setCls(this._mktOffice, 'bad', !ch.office.canPush);
+    } else {
+      const term = num(s.termDay, 1461);
+      setText(this._mktOffice, 'term day ' + NF.format(s.day || 0) + ' / ' + NF.format(term));
+      setCls(this._mktOffice, 'bad', false);
+    }
+
+    // targets: chain snapshot if we have one, this browser's sim if we do not.
+    // stats() walks all 2304 tiles, so it is sampled once per game-day in
+    // _sampleMarket and cached here - update() runs at 60fps and must not.
+    const local = fresh ? null : this._mktLocal;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const t = fresh ? num(ch.districts[i].nav, 0) : (local ? num(local[i].nav, 0) : 0);
+      if (t !== r.target) { r.prev = r.target; r.target = t; }
+      // ease toward the target so the numbers move rather than jump on arrival
+      r.shown += (r.target - r.shown) * 0.08;
+      if (Math.abs(r.target - r.shown) < 1) r.shown = r.target;
+
+      setText(r.nav, money(r.shown));
+      const pct = r.prev > 0 ? ((r.target - r.prev) / r.prev) * 100 : 0;
+      setText(r.chg, (pct === 0 ? '—' : (pct > 0 ? '+' : '') + pct.toFixed(1) + '%'));
+      setCls(r.chg, 'up', pct > 0.05);
+      setCls(r.chg, 'down', pct < -0.05);
+      setText(r.arrow, pct > 0.05 ? '▲' : pct < -0.05 ? '▼' : '·');
+      setCls(r.arrow, 'up', pct > 0.05);
+      setCls(r.arrow, 'down', pct < -0.05);
+    }
+  };
+
+  /* Sampled once per game-day alongside the stat tiles, not per frame. */
+  UI.prototype._sampleMarket = function (s) {
+    if (!this._mktRows || !this._mktRows.length) return;
+    const ch = s.chain;
+    const fresh = !!(ch && ch.districts && ch.districts.length === this._mktRows.length);
+    const local = (!fresh && MM.districts) ? MM.districts.stats(s) : null;
+    this._mktLocal = local;                     // cached for update(); see _updateMarket
+    for (let i = 0; i < this._mktRows.length; i++) {
+      const r = this._mktRows[i];
+      r.hist.push(fresh ? num(ch.districts[i].nav, 0) : (local ? num(local[i].nav, 0) : 0));
+      if (r.hist.length > HIST) r.hist.shift();
+      setAttr(r.line, 'points', sparkPoints(r.hist));
+    }
+  };
+
   UI.prototype.update = function (s) {
     if (!s) return;
     const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -564,6 +892,7 @@ window.MM = window.MM || {};
       const first = this._day < 0;
       this._day = s.day;
       this._sample(s, d, first);
+      this._sampleMarket(s);
       setText(this._dayEl, 'Day ' + NF.format(s.day));
       setText(this._yearEl, 'Year ' + clamp(Math.floor((s.day - 1) / ((s.termDay || 1461) / 4)) + 1, 1, 4) + ' of 4');
     }
@@ -572,6 +901,7 @@ window.MM = window.MM || {};
     for (let i = 0; i < STATS.length; i++) {
       const st = STATS[i];
       setText(this._tiles[st.key].val, st.fmt(st.get(s, d)));
+      if (this._cityMetrics[st.key]) setText(this._cityMetrics[st.key], st.fmt(st.get(s, d)));
     }
     const cash = this._tiles.cash;
     setText(cash.sub, signed(d.net) + '/d');
@@ -598,11 +928,30 @@ window.MM = window.MM || {};
     setCls(this._tiles.traf.root, 'alarm', (s.traffic || 0) > 70);
 
     // speed + tools
-    for (let i = 0; i < this._speeds.length; i++) setCls(this._speeds[i], 'on', s.speed === i);
+    for (let i = 0; i < this._speeds.length; i++) {
+      setCls(this._speeds[i], 'on', s.speed === i); setAttr(this._speeds[i], 'aria-pressed', String(s.speed === i));
+    }
+    if (this._selected !== s.selected) {
+      if (this._selected !== undefined) {
+        if (MM.renderer) MM.renderer.buildMode = true;
+        for (let i = 0; i < this._groups.length; i++) if (this._groups[i].tiles.indexOf(s.selected) >= 0) this._category(i);
+      }
+      this._selected = s.selected;
+    }
+    const building = !!(MM.renderer && MM.renderer.buildMode);
+    if (this._placementTitle) {
+      const inf = (MM.TILE_INFO || {})[s.selected] || {};
+      setText(this._placementTitle, building ? inf.name + ' · $' + (inf.cost || 0) : 'Explore your city');
+      setText(this._placementText, building ? (this._touch ? 'Tap to place · Drag to move' : 'Click to place · Right-drag to move')
+        : (this._touch ? 'Drag to explore · Pinch to zoom' : 'Drag to explore · Scroll to zoom'));
+      if (this._cancelBuild.hidden === building) this._cancelBuild.hidden = !building;
+    }
     for (let i = 0; i < this._tools.length; i++) {
       const t = this._tools[i];
-      setCls(t.b, 'on', s.selected === t.tile);
+      setCls(t.b, 'on', building && s.selected === t.tile);
+      setAttr(t.b, 'aria-pressed', String(building && s.selected === t.tile));
       setCls(t.b, 'poor', (s.treasury || 0) < t.cost);
+      setAttr(t.b, 'aria-disabled', String((s.treasury || 0) < t.cost));
     }
 
     // policies
@@ -626,6 +975,8 @@ window.MM = window.MM || {};
     setText(this._bud.policy.v, money(pc));
     setText(this._bud.net.v, signed(d.net));
     setCls(this._bud.net.row, 'bad', d.net < 0);
+
+    this._updateMarket(s, d, now);
 
     this._syncLog(s);
 
