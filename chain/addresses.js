@@ -25,6 +25,33 @@ export const ENS = {
   VerifiableFactory:        '0x10dc6333cdfe1fcef624c6e0a8221b91804cd7ef'
 };
 
+/* Registration is NOT payable - ETHRegistrar.register() takes an ERC20
+ * paymentToken, so a name cannot be bought with Sepolia ETH alone.
+ *
+ * The trap the two-deployments problem sets here: chain/abi/MockUSDC.json is
+ * lifted from contracts-v2's own namespace and carries ITS address,
+ * 0xd3322b29...  The documented beta's price oracle answers isPaymentToken()
+ * false for that token, so getRegisterPrice() reverts with
+ * PaymentTokenNotSupported and the failure looks like a bad ABI rather than a
+ * wrong address. These are the tokens the DOCUMENTED beta actually accepts,
+ * both confirmed true against isPaymentToken() and both priced live.
+ *
+ * Source: https://docs.ens.domains/learn/deployments
+ * Price check (2026-09-12): cityhall.eth, 1 year = 8.000021 MockUSDC.
+ * Both mint freely: mint(address,uint256), no faucet gate. */
+export const PAYMENT = {
+  MockUSDC: { address: '0x768f42455a2d082e23ceef7d51e5787c82d67a39', decimals: 6 },
+  MockDAI:  { address: '0x5472c5725a00b7ba11f0794a79d08ade6f4683bd', decimals: 18 }
+};
+
+/* Commit-reveal, read live from the registrar on 2026-09-12. The deploy
+ * script must wait out MIN_COMMITMENT_AGE between commit() and register(). */
+export const REGISTRAR = {
+  MIN_COMMITMENT_AGE: 60n,        // seconds
+  MAX_COMMITMENT_AGE: 86400n,
+  MIN_REGISTER_DURATION: 2419200n // 28 days
+};
+
 /* PermissionedRegistry role bitmap. Every role's admin is the same bit shifted
  * left by 128, which is what makes "you may hold this office but never grant it
  * to anyone else" expressible. */

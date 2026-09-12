@@ -552,3 +552,36 @@ button:disabled, button[aria-disabled="true"] { cursor: not-allowed; }
 
 /* No room beside the rail on a narrow screen, and the game comes first. */
 @media (max-width: 1180px) { .mm-market { display: none; } }
+
+/* ---- wallet (driven by web3/bundle.js, inert without it) --------------- */
+.w-status { font-family: var(--mono); font-size: 10px; color: var(--dim); margin-bottom: 5px; }
+.w-row { display: flex; gap: 5px; }
+.w-btn {
+  flex: 1; padding: 5px 8px; font-size: 10px; border-radius: 7px;
+  border: 1px solid var(--line); color: var(--text2); background: var(--glass2);
+  white-space: nowrap; transition: background .12s, color .12s;
+}
+.w-btn:hover { background: var(--glass); color: var(--text); }
+.w-btn.primary { background: var(--amber); border-color: var(--amber); color: #10161f; font-weight: 600; }
+.w-btn.primary:hover { filter: brightness(1.06); }
+.w-btn:disabled { opacity: .55; cursor: default; }
+
+.w-scrim {
+  position: fixed; inset: 0; z-index: 60; pointer-events: auto;
+  background: rgba(20, 32, 28, .46); display: flex; align-items: center; justify-content: center;
+}
+.w-modal {
+  width: min(360px, 92vw); padding: 20px; border-radius: 14px;
+  background: var(--glass); border: 1px solid var(--line); box-shadow: var(--shadow);
+  display: flex; flex-direction: column; gap: 9px;
+}
+.w-title { font-size: 15px; font-weight: 700; color: var(--text); }
+.w-sub { font-size: 11px; color: var(--dim); line-height: 1.45; }
+.w-input {
+  font: inherit; font-size: 13px; padding: 9px 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: #fff; color: var(--text); width: 100%;
+}
+.w-input:focus { outline: 2px solid var(--cyan); outline-offset: 1px; }
+.w-err { font-size: 10.5px; color: var(--rose); min-height: 13px; line-height: 1.35; }
+.w-actions { display: flex; gap: 7px; }
+.w-actions .w-btn { padding: 8px 10px; font-size: 11.5px; }

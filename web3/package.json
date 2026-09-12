@@ -1,0 +1,19 @@
+{
+  "name": "cityhall-web3",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The chain layer. Bundled separately so src/ never gains a dependency.",
+  "scripts": {
+    "build": "esbuild src/index.js --bundle --format=iife --outfile=../web3/bundle.js --target=es2020 --minify --legal-comments=none",
+    "watch": "npm run build -- --watch",
+    "config": "node make-config.js"
+  },
+  "dependencies": {
+    "@privy-io/js-sdk-core": "^0.50.0",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

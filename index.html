@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- connect-src is the only reason this policy is not still default-src 'self'.
      src/*.js never reaches the network; web3/bundle.js does. Hosts are listed
      one per purpose so it is obvious what talks to what. -->
@@ -21,6 +22,7 @@
     https://api.privy.io;
 ">
 <title>MAYOR MAMDANI</title>
+<link rel="icon" type="image/svg+xml" href="src/favicon.svg">
 <link rel="stylesheet" href="src/style.css">
 </head>
 <body>
@@ -31,6 +33,7 @@
   <script src="src/state.js"></script>
   <script src="src/districts.js"></script>
   <script src="src/gfx.js"></script>
+  <script src="src/materials.js"></script>
   <script src="src/audio.js"></script>
   <script src="src/policies.js"></script>
   <script src="src/events.js"></script>
@@ -47,5 +50,9 @@
   <script src="src/ui.js"></script>
   <script src="src/demo.js"></script>
   <script src="src/game.js"></script>
+  <!-- The chain layer, bundled separately and loaded last. It writes
+       state.chain and nothing else. Remove this one tag and the page is
+       exactly the game it was before: src/*.js never reaches the network. -->
+  <script defer src="web3/bundle.js"></script>
 </body>
 </html>

@@ -15,3 +15,6 @@ web3/bundle.js
 !build/icon.png
 chain/build/
 chain/deployed.json
+web3/node_modules/
+web3/config.json
+web3/bundle.js
