@@ -22,6 +22,21 @@ let onChange = () => {};
 
 export function getWallet () { return wallet; }
 
+/* Called from the title screen, which exists long before the market panel
+   does. Resolves with the wallet, or with null if the visitor backs out -
+   never rejects, because a cancelled login is an ordinary outcome and the
+   door behind it has to open either way. */
+export function login () {
+  return new Promise(resolve => {
+    if (!privy) { resolve(null); return; }
+    if (wallet) { resolve(wallet); return; }      // already signed in
+    openLogin(resolve);
+  });
+}
+
+/* The cached session. No network, safe to call every frame. */
+export function currentUser () { return wallet; }
+
 // ---------------------------------------------------------------- DOM bits
 
 function el (tag, cls, parent, text) {
@@ -48,18 +63,19 @@ function mountDom () {
   ui.status = el('div', 'w-status', foot, 'not connected');
   ui.row = el('div', 'w-row', foot);
   ui.connect = el('button', 'w-btn primary', ui.row, 'Connect wallet');
-  ui.connect.addEventListener('click', openLogin);
+  ui.connect.addEventListener('click', () => openLogin());
   return true;
 }
 
 /* The login modal. Two fields, one at a time, nothing else on screen. */
-function openLogin () {
+function openLogin (done) {
+  var finish = function (w) { if (done) { var f = done; done = null; f(w || null); } };
   if (ui.modal) { ui.modal.remove(); ui.modal = null; }
   const scrim = el('div', 'w-scrim', document.body);
   ui.modal = scrim;
   const box = el('div', 'w-modal', scrim);
-  el('div', 'w-title', box, 'Enter the city economy');
-  el('div', 'w-sub', box, 'A wallet is created for you. No extension, no seed phrase.');
+  el('div', 'w-title', box, 'Take the office');
+  el('div', 'w-sub', box, 'No extension, no seed phrase, no gas. A wallet is made for you.');
 
   const input = el('input', 'w-input', box);
   input.type = 'email';
@@ -71,8 +87,8 @@ function openLogin () {
   const cancel = el('button', 'w-btn', actions, 'Cancel');
   const go = el('button', 'w-btn primary', actions, 'Send code');
 
-  cancel.addEventListener('click', () => { scrim.remove(); ui.modal = null; });
-  scrim.addEventListener('click', e => { if (e.target === scrim) { scrim.remove(); ui.modal = null; } });
+  cancel.addEventListener('click', () => { scrim.remove(); ui.modal = null; finish(null); });
+  scrim.addEventListener('click', e => { if (e.target === scrim) { scrim.remove(); ui.modal = null; finish(null); } });
 
   let stage = 'email';
   let email = '';
@@ -97,9 +113,10 @@ function openLogin () {
       } else {
         go.textContent = 'Signing in...';
         await privy.auth.email.loginWithCode(email, input.value.trim());
-        await ensureWallet();
+        const w = await ensureWallet();
         scrim.remove();
         ui.modal = null;
+        finish(w);
       }
     } catch (e) {
       err.textContent = String(e && (e.message || e)).slice(0, 160);
@@ -246,7 +263,13 @@ export async function mountWallet (opts) {
   onChange = opts.onChange || (() => {});
   if (!cfg.privyAppId) return;                 // not configured; read-only city
 
-  if (!mountDom()) return;
+  /* The panel is optional. It used to be a hard requirement - no market panel,
+     no Privy at all - which was survivable while the only way to sign in was a
+     button inside that panel. The title screen now offers one too, and it
+     exists long before the HUD does, so failing to find the panel must leave
+     Privy initialised and headless rather than absent. render() and the login
+     modal both already tolerate a missing ui.status. */
+  mountDom();
 
   privy = new Privy({
     appId: cfg.privyAppId,

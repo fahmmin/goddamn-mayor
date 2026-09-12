@@ -285,6 +285,21 @@ need(MM.sky && typeof MM.sky.draw === 'function', 'MM.sky.draw');
     MM.state = null;
   }
 
+  /* The shell binds keydown on window in the CAPTURE phase, and for Escape it
+     calls preventDefault and acts. The chain layer draws its login and deposit
+     dialogs on top, so without this guard Escape closes the menu - or resumes
+     the game - out from under an open wallet dialog, leaving it orphaned.
+     (Plain typing was never at risk: stopPropagation does not cancel a default
+     action, so characters reach a focused input either way.) */
+  {
+    const pass = MM.Shell.prototype._passThrough;
+    const fake = sel => ({ closest: q => (q.split(',').some(p => p.trim() === sel) ? {} : null) });
+    need(pass.call(null, fake('.w-modal')) === true, 'Escape inside a wallet dialog is left to the dialog');
+    need(pass.call(null, fake('.obs-panel')) === true, 'Escape inside a shell panel is left to the panel');
+    need(pass.call(null, { closest: () => null }) === false, 'bare keys are still kept from the game');
+    need(pass.call(null, null) === false, 'a keydown with no target does not throw');
+  }
+
   need(Object.keys(MM.lots.ARCH).length >= 30, 'lots.js exposes the full archetype set (' +
     Object.keys(MM.lots.ARCH).length + ')');
   const used = new Set(MM.lots.lots.map(L => L.arch));

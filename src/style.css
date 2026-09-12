@@ -586,6 +586,42 @@ button:disabled, button[aria-disabled="true"] { cursor: not-allowed; }
 .w-actions { display: flex; gap: 7px; }
 .w-actions .w-btn { padding: 8px 10px; font-size: 11.5px; }
 
+/* The same dialog, seen from the title screen.
+   The wallet modal is drawn by the chain layer and inherits the HUD's light
+   palette, which is right where it was born - inside a light HUD over the
+   city. On the shell it is a white card in the middle of a dark carriage, so
+   the shell restyles it rather than the chain layer growing a second theme it
+   would have to keep in sync. Scoped to body.obs-open: in game it stays
+   exactly the dialog it was. */
+body.obs-open .w-scrim {
+  background: rgba(6, 9, 10, .76);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+}
+body.obs-open .w-modal {
+  width: min(430px, 92vw); padding: 28px 28px 24px; border-radius: 16px; gap: 12px;
+  background: rgba(17, 21, 23, .975); border-color: rgba(255, 255, 255, .13);
+  font-family: var(--obs-serif);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .6);
+}
+body.obs-open .w-title {
+  font-family: var(--obs-display); font-size: 27px; font-weight: 400;
+  text-transform: uppercase; letter-spacing: -.02em; color: #fff;
+}
+body.obs-open .w-sub { font-family: var(--ui); font-size: 12.5px; color: rgba(255, 255, 255, .62); }
+body.obs-open .w-input {
+  background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .2);
+  color: #fff; font-size: 15px; padding: 12px 13px;
+}
+body.obs-open .w-input::placeholder { color: rgba(255, 255, 255, .35); }
+body.obs-open .w-btn {
+  border-color: rgba(255, 255, 255, .28); color: rgba(255, 255, 255, .85);
+  background: rgba(255, 255, 255, .05); border-radius: 999px;
+}
+body.obs-open .w-btn:hover { background: rgba(255, 255, 255, .14); color: #fff; }
+body.obs-open .w-btn.primary { background: #fff; border-color: #fff; color: #10161a; font-weight: 600; }
+body.obs-open .w-actions { margin-top: 4px; }
+body.obs-open .w-actions .w-btn { padding: 11px 20px; font-size: 13.5px; }
+
 
 /* ==== MAYOR shell =====================================================
    A train window onto the city. The frame never moves; the city outside it

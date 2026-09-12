@@ -228,9 +228,25 @@ window.MM = window.MM || {};
        reach it - except Escape, which is how you leave. */
     window.addEventListener('keydown', function (e) {
       if (!self.open) {
-        if (e.key === 'Escape' && !self._gameBusy()) { self.pause(); e.preventDefault(); }
+        /* Escape opens the menu during play - but not out from under a wallet
+           dialog. The deposit and login modals are drawn by the chain layer
+           while the shell is closed, and without this the menu would open
+           behind one and leave it orphaned over a running game. */
+        if (e.key === 'Escape' && !self._flying && !self._gameBusy() && !self._passThrough(e.target)) {
+          self.pause(); e.preventDefault();
+        }
         return;
       }
+      /* A dialog drawn on top of the shell owns its own keys.
+         This listener is on window in the CAPTURE phase, so it sees every key
+         before the dialog does. Typing survives without this - stopPropagation
+         does not cancel a default action, so characters still reach a focused
+         input - but Escape does not: the branch below calls preventDefault and
+         acts on it, which would close a shell panel or resume the game out
+         from under an open login. We are only here to keep BARE keys away from
+         the game; anything inside a dialog is that dialog's business. */
+      if (self._passThrough(e.target)) return;
+
       if (e.key === 'Escape') {
         if (self._panel) self.showPanel(null);
         else if (self.mode === 'pause') self.play();
@@ -242,6 +258,14 @@ window.MM = window.MM || {};
 
     this._initScroll();
     this.apply(0);
+  };
+
+  /* Does this key belong to something drawn on top of the shell?
+     Named, and on the prototype, so the regression is testable without a
+     browser: what it guards is Escape closing the menu out from under a
+     wallet dialog, which is a two-window-deep state no screenshot catches. */
+  Shell.prototype._passThrough = function (target) {
+    return !!(target && target.closest && target.closest('.w-modal, .obs-panel'));
   };
 
   // ---- scrolling ----------------------------------------------------------
@@ -405,14 +429,43 @@ window.MM = window.MM || {};
     return !!(s && (s.day || 0) > 1);
   };
 
-  /* Door one. Phase 3 puts the Privy login in front of this; until then the
-     fork is what opens, which is the same screen either way.
+  /* Door one: sign in, then choose a city.
      The primary button doubles as Resume when the shell was opened over a
      game in progress, so the mode check lives here rather than in a second
      click handler that would have to be swapped in and out. */
   Shell.prototype.beTheMayor = function () {
     if (this.mode === 'pause') { this.play(); return; }
-    this.showPanel('fork');
+    var self = this;
+    this._withChain(function (chain) {
+      /* No chain layer is a normal outcome, not an error: the game is
+         playable without one and the fork is the same screen either way.
+         A cancelled login lands here too. */
+      if (!chain || !chain.login) { self.showPanel('fork'); return; }
+      chain.login().then(function () { self.showPanel('fork'); },
+        function () { self.showPanel('fork'); });
+    });
+  };
+
+  /* web3/bundle.js is deferred and 660KB, so this button can be clicked
+     before the chain layer exists at all. Wait a beat for it, say so on the
+     button while waiting, and give up rather than hang - the same shape as
+     the poll index.js already uses to find MM.state. */
+  var CHAIN_WAIT_MS = 4000;
+
+  Shell.prototype._withChain = function (cb) {
+    var self = this, btn = this._primary, label = btn && btn.textContent;
+    if (window.MM_CHAIN) { cb(window.MM_CHAIN); return; }
+
+    var until = Date.now() + CHAIN_WAIT_MS;
+    if (btn) { btn.disabled = true; btn.textContent = 'Waking the chain…'; }
+    (function poll () {
+      if (window.MM_CHAIN || Date.now() > until) {
+        if (btn) { btn.disabled = false; btn.textContent = label; }
+        cb(window.MM_CHAIN || null);
+        return;
+      }
+      setTimeout(poll, 120);
+    })();
   };
 
   /* Door two. No wallet, no email, no choice to make - the city that is

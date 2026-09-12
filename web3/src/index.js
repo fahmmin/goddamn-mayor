@@ -11,7 +11,7 @@
  */
 import { createPublicClient, http, formatUnits, parseUnits } from 'viem';
 import { sepolia } from 'viem/chains';
-import { mountWallet, getWallet } from './wallet.js';
+import { mountWallet, getWallet, login, currentUser } from './wallet.js';
 import { ORACLE_ABI, VAULT_ABI, ERC20_ABI } from './abi.js';
 
 const POLL_MS = 10000;          // how often we ask the chain for a new snapshot
@@ -242,7 +242,7 @@ async function boot () {
     if ((state.day || 0) - lastPushDay >= PUSH_EVERY_DAYS) pushNow(false);
   }, 4000);
 
-  window.MM_CHAIN = { snapshot, pushNow, deposit, drawFaucet, balances, cfg };
+  window.MM_CHAIN = { snapshot, pushNow, deposit, drawFaucet, balances, login, currentUser, cfg };
 }
 
 boot().catch(e => console.warn('[chain] boot failed, game continues:', e));
