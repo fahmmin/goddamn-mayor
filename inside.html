@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Same policy as the game, minus the parts a static page cannot use. The
+     only external destination is Etherscan, and only as a link the reader
+     clicks - nothing here fetches anything. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  style-src 'self';
+  script-src 'none';
+  img-src 'self' data:;
+  connect-src 'none';
+">
+<title>What's inside — I'M THE GODDAMN MAYOR</title>
+<link rel="icon" type="image/svg+xml" href="src/favicon.svg">
+<link rel="stylesheet" href="src/inside.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="index.html">GODDAMN <em>MAYOR</em></a>
+    <a class="back" href="index.html">Open the city →</a>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="hero">
+    <div class="kicker">What's going on inside</div>
+    <h1>A city that<br>answers for itself</h1>
+    <p>
+      You play an isometric city. It keeps score the way a city does — rent, approval,
+      land value — and then it writes that score somewhere it cannot take back.
+      This page is the part underneath.
+    </p>
+  </div>
+
+  <!-- ================================================================== -->
+  <section>
+    <h2 class="sh">The path</h2>
+    <p class="ss">An email at one end, a share price at the other.</p>
+
+    <div class="flow">
+
+      <div class="step">
+        <div class="card">
+          <svg class="glyph" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="16" cy="11" r="5"/><path d="M5 28c0-6 5-9 11-9s11 3 11 9"/>
+          </svg>
+          <h3>You</h3>
+          <p>An email address. Nothing else is asked for.</p>
+          <div class="tag">no extension</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="card">
+          <svg class="glyph" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="16" r="5"/><path d="M16 16h12M24 16v5M28 16v4"/>
+          </svg>
+          <h3>Privy</h3>
+          <p>Mints a wallet you did not have to understand.</p>
+          <div class="tag">embedded · no seed phrase</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="card key">
+          <svg class="glyph" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M16 4 29 11.5 16 19 3 11.5Z"/><path d="M3 16.5 16 24l13-7.5M3 21.5 16 29l13-7.5"/>
+          </svg>
+          <h3>Your city</h3>
+          <p>A deterministic simulation. 2,304 tiles, recomputed every game-day.</p>
+          <div class="tag">no RNG · same city everywhere</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="card">
+          <svg class="glyph" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 26h24M6 26V13m6 13V13m8 13V13m6 13V13M3 13 16 5l13 8"/>
+          </svg>
+          <h3>CityOracle</h3>
+          <p>Publishes approval, rating, population and nine valuations.</p>
+          <div class="tag">only the name-holder may write</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="card">
+          <svg class="glyph" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <ellipse cx="16" cy="8" rx="11" ry="4"/><path d="M5 8v8c0 2.2 4.9 4 11 4s11-1.8 11-4V8"/>
+            <path d="M5 16v8c0 2.2 4.9 4 11 4s11-1.8 11-4v-8"/>
+          </svg>
+          <h3>Nine vaults</h3>
+          <p>One share class per district. Stock ERC-4626.</p>
+          <div class="tag">downtown · midtown · riverside · +6</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="loop">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M20 11a8 8 0 1 0-2.3 6.3"/><path d="M20 5v6h-6"/>
+      </svg>
+      <div>
+        <b>The Graph closes the loop.</b>
+        <span>Ninety days of every district, and your whole position, in one request.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section>
+    <h2 class="sh">The names</h2>
+    <p class="ss">Every thing in the city has one, and it is ENS.</p>
+
+    <div class="tree">
+      <div><span class="n"><b>cityhall.eth</b></span><span class="w">the city</span></div>
+      <div><span class="r">└─ </span><span class="n"><b>downtown</b>.cityhall.eth</span><span class="w">a district — its own registry</span></div>
+      <div><span class="r">&nbsp;&nbsp; └─ </span><span class="n"><b>2344-houston</b>.downtown.cityhall.eth</span><span class="w">a parcel</span></div>
+      <div><span class="r">&nbsp;&nbsp; &nbsp;&nbsp; └─ </span><span class="n"><b>ada</b>.2344-houston.downtown.cityhall.eth</span><span class="w">a resident</span></div>
+      <div><span class="r">└─ </span><span class="n"><b>mayor</b>.cityhall.eth</span><span class="w">the office — expires with the term</span></div>
+    </div>
+
+    <ul class="bullets">
+      <li>Each district owns its own registry.</li>
+      <li>A parcel's name is a pure function of its tile.</li>
+      <li>Nothing is stored. Every machine names it the same.</li>
+    </ul>
+  </section>
+
+  <!-- ================================================================== -->
+  <section>
+    <h2 class="sh">The pieces</h2>
+    <p class="ss">Five of them. Each one carries its own evidence.</p>
+
+    <div class="blocks">
+
+      <div class="block">
+        <svg class="glyph" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="3" width="26" height="26" rx="3"/><rect x="8" y="8" width="16" height="16" rx="2"/><rect x="13" y="13" width="6" height="6" rx="1"/>
+        </svg>
+        <h3>ENS</h3>
+        <p class="sub">Subregistries, one per district</p>
+        <ul>
+          <li>Each district issues its own names.</li>
+          <li>Names are derived, never stored.</li>
+          <li>An office expires; it cannot be sold.</li>
+        </ul>
+        <div class="proof">
+          <span class="k">Root registry</span>
+          <a href="https://sepolia.etherscan.io/address/0x13f44e08710548E39df3eE4eBA42E8924d516db9">0x13f44e08710548E39df3eE4eBA42E8924d516db9</a>
+        </div>
+      </div>
+
+      <div class="block">
+        <svg class="glyph" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="4" y="4" width="14" height="24" rx="2"/><circle cx="14" cy="16" r="1.6"/>
+          <path d="M22 16h7M27 16v4M29.5 16v3"/>
+        </svg>
+        <h3>Privy</h3>
+        <p class="sub">A wallet in sixty seconds</p>
+        <ul>
+          <li>Email and a six-digit code.</li>
+          <li>No extension, no seed phrase, no gas.</li>
+          <li>Keys live in an isolated frame.</li>
+        </ul>
+        <div class="proof">
+          <span class="k">Cold start</span>
+          No wallet at all → holding a district position, without leaving the page.
+        </div>
+      </div>
+
+      <div class="block">
+        <svg class="glyph" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
+          <path d="M16 3 29 10 16 17 3 10Z"/><path d="M3 16l13 7 13-7M3 22l13 7 13-7"/>
+        </svg>
+        <h3>The Graph</h3>
+        <p class="sub">History the RPC cannot serve</p>
+        <ul>
+          <li>Nine vaults in one query.</li>
+          <li>Ninety days of valuations, indexed.</li>
+          <li>Standard ERC-4626 schema.</li>
+        </ul>
+        <div class="proof">
+          <span class="k">The actual query</span>
+<pre class="q">{ vaults(orderBy: districtId) {
+    ensName sharePrice totalAssets
+} }</pre>
+        </div>
+      </div>
+
+      <div class="block">
+        <svg class="glyph" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
+          <ellipse cx="16" cy="7" rx="10" ry="3.5"/><path d="M6 7v7c0 1.9 4.5 3.5 10 3.5s10-1.6 10-3.5V7"/>
+          <path d="M6 14v7c0 1.9 4.5 3.5 10 3.5s10-1.6 10-3.5v-7"/>
+        </svg>
+        <h3>ERC-4626</h3>
+        <p class="sub">Stock OpenZeppelin, on purpose</p>
+        <ul>
+          <li>Nothing overrides totalAssets().</li>
+          <li>Share price moves when the district does.</li>
+          <li>One settlement may move 5% at most.</li>
+        </ul>
+        <div class="proof">
+          <span class="k">Downtown vault</span>
+          <a href="https://sepolia.etherscan.io/address/0x8403bcfc135873a23dc1f1a4c113f1232b0cfa15">0x8403bcfc135873a23dc1f1a4c113f1232b0cfa15</a>
+        </div>
+      </div>
+
+      <div class="block">
+        <svg class="glyph" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
+          <path d="M16 5 29 12.5 16 20 3 12.5Z"/><path d="M9.5 16.2V23l6.5 3.8 6.5-3.8v-6.8"/>
+        </svg>
+        <h3>The simulation</h3>
+        <p class="sub">Deterministic, every frame</p>
+        <ul>
+          <li>No Math.random in naming or drawing.</li>
+          <li>The same seed draws the same city.</li>
+          <li>It never touches the network.</li>
+        </ul>
+        <div class="proof">
+          <span class="k">City oracle</span>
+          <a href="https://sepolia.etherscan.io/address/0x82c1d7516daf174d5689ec1ab9ef9dc3f13c72db">0x82c1d7516daf174d5689ec1ab9ef9dc3f13c72db</a>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section>
+    <h2 class="sh">What holds it honest</h2>
+    <p class="ss">Three constraints the code actually enforces.</p>
+
+    <div class="blocks">
+      <div class="block">
+        <h3>No name, no write</h3>
+        <p class="sub">The oracle asks ENS first</p>
+        <ul>
+          <li>Only mayor.cityhall.eth may publish.</li>
+          <li>The name expires with the term.</li>
+          <li>Then the city stops reporting itself.</li>
+        </ul>
+      </div>
+      <div class="block">
+        <h3>The chain is removable</h3>
+        <p class="sub">One script tag</p>
+        <ul>
+          <li>src/ never reaches the network.</li>
+          <li>Delete the bundle; the game is unchanged.</li>
+          <li>Play the whole thing with no wallet.</li>
+        </ul>
+      </div>
+      <div class="block">
+        <h3>A dead RPC is staleness</h3>
+        <p class="sub">Never a crash</p>
+        <ul>
+          <li>The panel keeps its last known numbers.</li>
+          <li>The badge flips to stale on its own.</li>
+          <li>The simulation does not notice.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Sepolia testnet</span>
+    <span>Nine districts · nine registries · nine vaults</span>
+    <a href="https://sepolia.etherscan.io/address/0x82c1d7516daf174d5689ec1ab9ef9dc3f13c72db">CityOracle on Etherscan</a>
+    <a href="index.html">Open the city</a>
+  </div>
+</footer>
+
+</body>
+</html>

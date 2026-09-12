@@ -145,10 +145,17 @@ window.MM = window.MM || {};
     el('em', 'obs-mark-c', mark, 'MAYOR');
 
     var links = el('nav', 'obs-links liquid-glass', nav);
-    [['How to play', 'how'], ['The chain', 'chain'], ['Settings', 'settings'], ['Credits', 'credits']]
+    [['How to play', 'how'], ['Settings', 'settings'], ['Credits', 'credits']]
       .forEach(function (l) {
         on(el('button', 'obs-link', links, l[0]), function () { self.showPanel(l[1]); });
       });
+    /* inside.html says what the chain panel used to say, with diagrams and
+       real addresses instead of four paragraphs. A plain link, because it is
+       a document and a new tab is what people expect of one. */
+    var inside = el('a', 'obs-link', links, "What's inside");
+    inside.href = 'inside.html';
+    inside.target = '_blank';
+    inside.rel = 'noopener';
     this._navEnter = on(el('button', 'obs-link obs-enter', links, 'Enter'), function () { self.play(); });
 
     // ---- the scroller ----

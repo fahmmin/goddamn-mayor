@@ -1,0 +1,228 @@
+/* inside.html - what's going on inside.
+ *
+ * White, quiet, and deliberately not the game's skin. The game is a dark
+ * carriage at dusk; this is the page you send to somebody who wants to know
+ * whether any of it is real. Different job, different surface.
+ *
+ * The whole page is governed by one rule: a text budget. Every block gets one
+ * title, one subtitle of six words or fewer, and at most three lines of eight
+ * words or fewer. Anything that needs a paragraph means the diagram is not
+ * doing its job, and the fix is to redraw the diagram, not to widen this file.
+ */
+
+@font-face {
+  font-family: 'Jaro';
+  font-style: normal; font-weight: 400; font-display: swap;
+  src: url('fonts/jaro.woff2') format('woff2');
+}
+
+:root {
+  --paper:  #ffffff;
+  --raised: #fafaf9;
+  --ink:    #14181a;
+  --body:   #3d4649;
+  --muted:  #79838a;
+  --line:   #e5e8e9;
+  --line2:  #f0f2f2;
+  --accent: #9d7027;          /* the game's amber, which survives on white */
+  /* The highlighted card gets its OWN pair, rather than borrowing --ink for
+     a ground. --ink names a text colour; using it as a background meant the
+     card inverted along with the type and went white-on-white in dark mode.
+     A token borrowed for a role it is not named for does not survive a theme
+     flip. */
+  --key-bg: #14181a;
+  --key-fg: #ffffff;
+  --key-dim: rgba(255, 255, 255, .66);
+  --key-line: #14181a;
+  --ui: "Segoe UI", -apple-system, system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --display: 'Jaro', 'Arial Black', var(--ui);
+  --maxw: 1080px;
+}
+
+/* The page is opened from a dark game, so a reader with a dark system will
+   have their eyes adjusted to it. Same layout, inverted ground. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0f1213; --raised: #161a1c; --ink: #f2f4f4; --body: #b9c2c5;
+    --muted: #7e888d; --line: #262c2e; --line2: #1c2123; --accent: #e2ab4c;
+    /* On a dark page the highlighted card cannot be "the dark one", so it
+       becomes the raised one with an accent edge. Same job, opposite means. */
+    --key-bg: #1d2426; --key-fg: #ffffff;
+    --key-dim: rgba(255, 255, 255, .6); --key-line: #e2ab4c;
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--paper); color: var(--body);
+  font-family: var(--ui); font-size: 15px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; }
+h1, h2, h3 { color: var(--ink); }
+
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 28px; }
+
+/* ---- masthead ---------------------------------------------------------- */
+.top {
+  position: sticky; top: 0; z-index: 5;
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 62px; gap: 16px; }
+.mark { font-family: var(--display); font-size: 18px; color: var(--ink); text-decoration: none; letter-spacing: .4px; }
+.mark em { font-style: normal; color: var(--accent); }
+.back {
+  font-size: 13px; color: var(--muted); text-decoration: none;
+  border: 1px solid var(--line); border-radius: 999px; padding: 7px 15px;
+  transition: border-color .2s, color .2s;
+}
+.back:hover { color: var(--ink); border-color: var(--muted); }
+
+/* ---- hero -------------------------------------------------------------- */
+.hero { padding: 74px 0 18px; }
+.hero h1 {
+  font-family: var(--display); font-weight: 400; text-transform: uppercase;
+  font-size: clamp(34px, 6vw, 68px); line-height: .92; letter-spacing: -.02em; margin: 0;
+}
+.hero p {
+  margin: 20px 0 0; max-width: 34rem; font-size: 17px; line-height: 1.62; color: var(--body);
+}
+.kicker {
+  font-size: 10.5px; letter-spacing: 2.6px; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 14px;
+}
+
+section { padding: 54px 0; border-top: 1px solid var(--line2); }
+section:first-of-type { border-top: 0; }
+.sh { margin: 0 0 4px; font-size: 21px; font-weight: 650; letter-spacing: -.2px; }
+.ss { margin: 0 0 28px; font-size: 14px; color: var(--muted); }
+
+/* ---- the flow ----------------------------------------------------------
+   Cards in a row with dotted connectors. HTML and not SVG on purpose: a row
+   of five SVG cards cannot reflow, and this has to become a column on a
+   phone. The glyphs inside them are SVG, where SVG is actually the right
+   tool. */
+.flow {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 0;
+  align-items: stretch;
+}
+.step { position: relative; display: flex; }
+/* The connector. A pseudo-element on the gap rather than a real node, so the
+   markup stays a plain list of five cards. */
+.step + .step::before {
+  /* The gap between two cards is their facing 10px margins, centred on the
+     grid-cell boundary - so the connector starts 10px before the cell and is
+     20px long. Not 21: it would start inside the previous card. */
+  content: ''; position: absolute; left: -10px; top: 50%; width: 20px;
+  border-top: 1.5px dotted var(--muted); opacity: .8;
+}
+.card {
+  flex: 1; background: var(--raised); border: 1px solid var(--line);
+  border-radius: 14px; padding: 16px 15px 15px; margin: 0 10px;
+  display: flex; flex-direction: column; gap: 9px;
+}
+.card h3 { margin: 0; font-size: 13.5px; font-weight: 650; letter-spacing: -.1px; }
+.card p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.card .tag {
+  margin-top: auto; font-family: var(--mono); font-size: 10.5px;
+  color: var(--accent); letter-spacing: -.1px; word-break: break-all;
+}
+/* The one claim the page is making: the thing on chain is the output of a
+   real simulation, not a number somebody typed. So that card is solid. */
+.card.key {
+  background: var(--key-bg); border-color: var(--key-line); color: var(--key-fg);
+}
+.card.key h3 { color: var(--key-fg); }
+.card.key p { color: var(--key-dim); }
+.card.key .tag { color: #e2ab4c; }
+.glyph { width: 34px; height: 34px; display: block; color: var(--accent); }
+.card.key .glyph { color: #e2ab4c; }
+
+/* The return leg: The Graph feeding history back to the reader. */
+.loop {
+  margin-top: 18px; display: flex; align-items: center; gap: 12px;
+  padding: 13px 16px; border: 1px dashed var(--line); border-radius: 12px;
+  background: transparent;
+}
+.loop svg { width: 22px; height: 22px; color: var(--accent); flex: none; }
+.loop b { color: var(--ink); font-weight: 650; font-size: 13px; }
+.loop span { font-size: 12.5px; color: var(--muted); }
+
+/* ---- the ENS tree ------------------------------------------------------ */
+.tree {
+  font-family: var(--mono); font-size: 13px; line-height: 2.05;
+  background: var(--raised); border: 1px solid var(--line);
+  border-radius: 14px; padding: 20px 22px; overflow-x: auto;
+}
+.tree div { white-space: nowrap; }
+.tree .n { color: var(--ink); }
+.tree .n b { font-weight: 600; color: var(--accent); }
+.tree .w { color: var(--muted); font-family: var(--ui); font-size: 12px; padding-left: 14px; }
+.tree .r { color: var(--muted); }
+
+.bullets { list-style: none; margin: 20px 0 0; padding: 0; display: grid; gap: 7px; }
+.bullets li { position: relative; padding-left: 19px; font-size: 13.5px; color: var(--body); }
+.bullets li::before {
+  content: ''; position: absolute; left: 0; top: .62em;
+  width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+}
+
+/* ---- the five blocks --------------------------------------------------- */
+.blocks { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+.block {
+  background: var(--raised); border: 1px solid var(--line); border-radius: 14px;
+  padding: 20px; display: flex; flex-direction: column; gap: 11px;
+}
+.block h3 { margin: 0; font-size: 15px; font-weight: 650; }
+.block .sub { margin: -6px 0 0; font-size: 12px; color: var(--muted); }
+.block ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.block li { font-size: 13px; color: var(--body); padding-left: 15px; position: relative; }
+.block li::before {
+  content: ''; position: absolute; left: 0; top: .6em;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent); opacity: .55;
+}
+/* One real artifact per card - an address, a name, a runnable query. Not a
+   description of one. That is the difference between a docs page and a deck. */
+/* break-all is correct for a 42-character hex address and wrong for the
+   sentence next to it - it was splitting words mid-syllable. Scoped to the
+   links, which are the only things here that cannot wrap on a space. */
+.proof {
+  margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line);
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  overflow-wrap: break-word; line-height: 1.65;
+}
+.proof a { color: var(--accent); text-decoration: none; word-break: break-all; }
+.proof a:hover { text-decoration: underline; }
+.proof .k { display: block; font-family: var(--ui); font-size: 10px;
+  letter-spacing: 1.6px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+
+pre.q {
+  margin: 0; font-family: var(--mono); font-size: 11.5px; line-height: 1.65;
+  color: var(--body); white-space: pre; overflow-x: auto;
+}
+
+/* ---- foot -------------------------------------------------------------- */
+footer { border-top: 1px solid var(--line); padding: 30px 0 60px; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 26px; }
+footer span, footer a { font-size: 12px; color: var(--muted); text-decoration: none; }
+footer a:hover { color: var(--ink); }
+
+/* ---- narrow ------------------------------------------------------------ */
+@media (max-width: 860px) {
+  .flow { grid-template-columns: 1fr; gap: 22px; }
+  .card { margin: 0; }
+  /* The connector turns to face the new axis rather than disappearing - the
+     point of the diagram is that these five things are in an order. */
+  .step + .step::before {
+    left: 50%; top: -16px; width: 0; height: 16px;
+    border-top: 0; border-left: 1.5px dotted var(--muted);
+  }
+  .wrap { padding: 0 20px; }
+  .hero { padding: 46px 0 10px; }
+  section { padding: 40px 0; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
