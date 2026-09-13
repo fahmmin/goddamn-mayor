@@ -234,7 +234,7 @@ the oracle actually wrote. That is the difference between a chart of the game
 and a chart of the record, and the panel's badge reads `graph` rather than
 `live` precisely when it is showing the latter.
 
-Live at [`…/mayor/v0.2.0`](https://api.studio.thegraph.com/query/1760255/mayor/v0.2.0),
+Live at [`…/mayor/v0.3.0`](https://api.studio.thegraph.com/query/1760255/mayor/v0.3.0),
 and checkable without a wallet:
 
 ```bash
@@ -250,16 +250,28 @@ cd subgraph && npm run verify
   ok    deputy.cityhall.eth is in the index
   ok      it cannot write  (roles 65536)
   ok      and has never once held the write role  (2 role events checked)
+  ok    only the office may write  (10 non-office names, 0 claiming write)
+  ok      even though some hold the same role bit  (9 hold SET_RESOLVER, which is that bit)
   ok    the oracle half is indexed too  (16 pushes, day 1012)
   ok    all nine vaults are indexed  (9/9)
 
-  10 passed, 0 failed
+  12 passed, 0 failed
 ```
 
 `65536` is `ROLE_RENEW` and nothing else. The Deputy holds a name, that name
 carries the renew role, and the write bit has never been set on it in any role
 event the registry ever emitted — which is the agent-as-namespace bullet above,
 stated as data rather than as a promise.
+
+The last two lines are there because of a mistake worth keeping visible. The
+write role shares its bit with `SET_RESOLVER` — `1 << 24` is both — and all
+nine districts hold `SET_RESOLVER` so they can set their own resolvers. A
+version of this index tested the bitmap alone and therefore reported nine
+districts as able to write to an oracle that only ever asks about one label.
+So the check now asserts the false positives are gone **and** that some
+non-office name still holds the shared bit, because an assertion that would
+pass once the districts stopped holding `SET_RESOLVER` would be testing
+nothing at all.
 
 **It is still not entered for The Graph's Composable or Standardized prize, and
 the honest reason is that it does not qualify.** Indexing two kinds of contract

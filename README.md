@@ -21,7 +21,7 @@ removing that one script tag leaves the game exactly as it was.
 ## Live Demo
 
 - Application: https://im-the-mayor.vercel.app/
-- Subgraph queries: https://api.studio.thegraph.com/query/1760255/mayor/v0.2.0
+- Subgraph queries: https://api.studio.thegraph.com/query/1760255/mayor/v0.3.0
 - Subgraph dashboard: https://thegraph.com/studio/subgraph/mayor
 - Root ENS name: https://sepolia.app.ens.domains/cityhall.eth
 - Deployment manifest: [`chain/deployed.json`](chain/deployed.json)
@@ -108,7 +108,7 @@ dependencies and are installed separately, under `chain/` and `subgraph/`.
 npm test                      # 113 assertions, no browser, no network
 node smoke.js                 # 225 checks: 500 game-days against a fake DOM
 node chain/verify-gate.js     # 8 assertions against the live deployment
-cd subgraph && npm run verify # 10 assertions against the deployed index
+cd subgraph && npm run verify # 12 assertions against the deployed index
 npm run api:check             # 10 assertions against a real Postgres
 ```
 
