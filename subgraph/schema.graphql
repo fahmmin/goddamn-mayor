@@ -198,8 +198,10 @@ type ResourceLink @entity(immutable: false) {
   "registry address + resource."
   id: ID!
   registry: Bytes!
-  "Resolved to a Name on read, not on write - TokenResource may be emitted
-   before the LabelRegistered that names the token, and a link that required
-   the Name to exist would be silently dropped in that ordering."
+  """
+  Resolved to a Name on read, not on write - TokenResource may be emitted
+  before the LabelRegistered that names the token, and a link that required
+  the Name to exist would be silently dropped in that ordering.
+  """
   tokenId: BigInt!
 }
