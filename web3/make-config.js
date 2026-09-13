@@ -11,9 +11,15 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
 
-for (const line of fs.readFileSync(path.join(ROOT, '.env'), 'utf8').split('\n')) {
-  const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*?)\s*$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+/* .env is for a machine with a checkout. A build server has no such file and
+ * should not - the same names are project environment variables there, and
+ * process.env already carries them. */
+const ENV_FILE = path.join(ROOT, '.env');
+if (fs.existsSync(ENV_FILE)) {
+  for (const line of fs.readFileSync(ENV_FILE, 'utf8').split('\n')) {
+    const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*?)\s*$/);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+  }
 }
 
 const deployedPath = path.join(ROOT, 'chain', 'deployed.json');
@@ -22,6 +28,15 @@ if (!fs.existsSync(deployedPath)) {
   process.exit(1);
 }
 const D = JSON.parse(fs.readFileSync(deployedPath, 'utf8'));
+
+/* Supabase hands you these names in its dashboard snippets and Privy's guide
+ * repeats them, so accept that spelling as well as the plain one rather than
+ * making everyone rename a variable they just copied. */
+const SUPABASE_URL = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
+/* On Vercel the API is served from the same origin as the game, so the base
+ * is simply /api and there is nothing to configure. Anywhere else, say where
+ * it lives. */
+const CITY_API = (process.env.CITY_API_URL || (process.env.VERCEL ? '/api' : '')).trim().replace(/\/+$/, '');
 
 const ORDER = ['downtown', 'midtown', 'riverside', 'uptown', 'westside',
   'southside', 'wharves', 'redhook', 'airfield'];
@@ -56,13 +71,28 @@ const cfg = {
   // Empty until `npm --prefix subgraph run deploy` returns a query URL.
   // Absent is a normal state: the sparkline falls back to a local sample.
   subgraph: process.env.SUBGRAPH_URL || '',
-  privyClientId: process.env.PRIVY_CLIENT_ID || ''
+  privyClientId: process.env.PRIVY_CLIENT_ID || '',
+
+  /* Where the saved city lives. Only the Edge Function URL is published:
+   * the browser never speaks to the database directly, so the publishable
+   * key has nothing to do here and is not shipped. Absent is a normal state
+   * - the city then lives in localStorage exactly as it always has. */
+  /* Where the saved city lives. One base URL, because the browser does not
+   * care which of the two is answering: api/server.js on this machine, or
+   * the Supabase Edge Function. Only the URL is published - no database
+   * credential of any kind reaches the client. Absent is a normal state; the
+   * city then lives in localStorage exactly as it always has. */
+  cloud: CITY_API || (SUPABASE_URL ? SUPABASE_URL.replace(/\/+$/, '') + '/functions/v1' : '')
 };
 
 /* config.json is SERVED TO BROWSERS. The app id and client id are public by
  * design; the app secret and the deployer key are not, and one careless line
  * here would publish them to every visitor. Fail loudly rather than ship it. */
-const SECRETS = ['PRIVY_APP_SECRET', 'DEPLOYER_PRIVATE_KEY'];
+const SECRETS = ['PRIVY_APP_SECRET', 'DEPLOYER_PRIVATE_KEY',
+  /* A service role key or a Postgres URL in this file would hand every
+   * visitor the whole database, RLS and Edge Function included. */
+  'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY', 'SUPABASE_DB_URL',
+  'DATABASE_URL', 'POSTGRES_URL', 'GRAPH_DEPLOY_KEY'];
 const blob = JSON.stringify(cfg);
 for (const name of SECRETS) {
   const v = (process.env[name] || '').trim();
@@ -85,4 +115,5 @@ console.log('    oracle  ' + cfg.oracle);
 console.log('    vaults  ' + cfg.vaults.length + '/9');
 console.log('    privy   ' + (cfg.privyAppId ? 'configured' : 'MISSING - wallet UI stays off'));
 console.log('    graph   ' + (cfg.subgraph ? cfg.subgraph : 'not deployed - charts fall back to a local sample'));
+console.log('    cloud   ' + (cfg.cloud || 'not set - the city stays in this browser'));
 console.log('');

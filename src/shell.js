@@ -465,9 +465,32 @@ window.MM = window.MM || {};
          playable without one and the fork is the same screen either way.
          A cancelled login lands here too. */
       if (!chain || !chain.login) { self.showPanel('fork'); return; }
-      chain.login().then(function () { self.showPanel('fork'); },
+      chain.login().then(function () { self._afterLogin(chain); },
         function () { self.showPanel('fork'); });
     });
+  };
+
+  /* Signed in. The fork asks which city to START - the wrong question for a
+     mayor who already has one somewhere else, and the reason a returning
+     player used to be handed a brand new city. Show what they have first;
+     the fork is still one click behind it. */
+  Shell.prototype._afterLogin = function (chain) {
+    var cities = (chain.cloud && chain.cloud.cities && chain.cloud.cities()) || [];
+    if (!cities.length) { this.showPanel('fork'); return; }
+    this._cities = cities;
+    this.showPanel('cities');
+  };
+
+  /* Open a stored city. adopt() mutates the live state in place for the same
+     reason newGame does - game.js closes over it. */
+  Shell.prototype.openStored = function (id) {
+    var self = this, chain = window.MM_CHAIN;
+    if (!chain || !chain.cloud) { this.showPanel('fork'); return; }
+    chain.cloud.open(id).then(function (ok) {
+      if (!ok) { self.showPanel('fork'); return; }
+      self.showPanel(null);
+      self.play();
+    }, function () { self.showPanel('fork'); });
   };
 
   /* web3/bundle.js is deferred and 660KB, so this button can be clicked
@@ -506,6 +529,13 @@ window.MM = window.MM || {};
      game.js closes over it - see src/demo.js. */
   Shell.prototype._begin = function (kind) {
     if (MM.newGame) MM.newGame(kind);
+    /* A city started is a city ADDED. Without this the next autosave writes
+       the new one straight over whichever row was last open - which is how
+       you would lose an evening's city by clicking Break ground. */
+    var chain = window.MM_CHAIN;
+    if (chain && chain.cloud && chain.cloud.configured()) {
+      chain.cloud.startNew(kind === 'fresh' ? 'Broke ground' : 'City Hall');
+    }
     this.showPanel(null);
     this.play();
   };
@@ -585,11 +615,48 @@ window.MM = window.MM || {};
 
   // ---- panels -------------------------------------------------------------
 
+  /* 'Day 412, yesterday' reads better than an ISO timestamp, and the exact
+     minute has never been the thing anybody wants from a save list. */
+  function when (iso) {
+    if (!iso) return '';
+    var days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+    if (!(days >= 0)) return '';
+    if (days === 0) return ', today';
+    if (days === 1) return ', yesterday';
+    return ', ' + days + ' days ago';
+  }
+
   var PANELS = {
-    /* The fork. Two ways to hold the office, and they are genuinely different
-       games: one is an empty block, the other is a built-out city you did not
-       build and now answer for. Both already existed as flags in demo.js -
-       this is a surface over them, not new game logic. */
+    /* The cities this account already has, found on another machine or
+       another browser. Offered rather than imposed: the city on THIS machine
+       may be the newer one, and opening a stored city over it without asking
+       is how an afternoon's work disappears into a login. */
+    cities: function (box) {
+      var self = this;
+      var cities = this._cities || [];
+      el('h2', null, box, cities.length > 1 ? 'Your cities' : 'Your city is where you left it');
+      el('p', 'lede', box, cities.length > 1
+        ? 'Signed in. Pick up whichever one you want.'
+        : 'This account already has a city saved.');
+
+      var ch = el('div', 'obs-choices', box);
+      cities.slice(0, 8).forEach(function (c) {
+        var b = on(el('button', 'obs-choice wide', ch), function () { self.openStored(c.id); });
+        el('strong', null, b, c.name || 'My city');
+        el('span', null, b, 'Day ' + (c.day | 0) + when(c.updated_at));
+      });
+
+      if (this._hasSave()) {
+        var here = MM.state;
+        var k = on(el('button', 'obs-choice wide', ch), function () { self.showPanel(null); self.play(); });
+        el('strong', null, k, 'Keep the city on this machine');
+        el('span', null, k, 'Day ' + (here.day | 0) + ', ' + (here.pop | 0).toLocaleString() + ' residents.');
+      }
+
+      var b2 = on(el('button', 'obs-choice wide', ch), function () { self.showPanel('fork'); });
+      el('strong', null, b2, 'Start another city');
+      el('span', null, b2, 'Break ground, or take over City Hall. It is added to the list above, not swapped for it.');
+    },
     fork: function (box) {
       var self = this;
       el('h2', null, box, 'Take the office');

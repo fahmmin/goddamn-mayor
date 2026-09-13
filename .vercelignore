@@ -1,0 +1,38 @@
+# Everything here is either a secret, a local tool, or something that would be
+# SERVED TO THE PUBLIC if it shipped. outputDirectory is the repo root, so
+# anything not excluded is a URL.
+
+.env
+.env.*
+!.env.example
+
+# Deploy machinery. contracts/ and chain/ hold the deployer's tooling; nothing
+# in the browser reads them, and chain/deploy.js reads .env.
+chain/compile.js
+chain/deploy.js
+chain/push-city.js
+chain/verify-gate.js
+chain/preflight.js
+chain/probe-registrar.js
+chain/build/
+chain/node_modules/
+contracts/
+subgraph/
+supabase/
+
+# Local development only
+tools/city-server.js
+tools/diag.js
+tools/render-check.js
+output/
+
+# Tests
+**/*.test.js
+smoke.js
+
+# Editor and agent scratch
+.claude/
+.codex/
+.agents/
+.playwright-mcp/
+docs/PLAN.md

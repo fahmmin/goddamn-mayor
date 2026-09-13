@@ -5,7 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- connect-src is the only reason this policy is not still default-src 'self'.
      src/*.js never reaches the network; web3/bundle.js does. Hosts are listed
-     one per purpose so it is obvious what talks to what. -->
+     one per purpose so it is obvious what talks to what.
+
+     The one wildcard is the saved city. Its host is the Supabase project in
+     web3/config.json, which is generated - pinning the project here would
+     mean editing this file on every redeploy and would break any fork that
+     brings its own project. The narrowing that matters is done by the Edge
+     Function, which serves nothing without a verified Privy token. -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
   style-src 'self' 'unsafe-inline';
@@ -19,7 +25,8 @@
     https://ethereum-sepolia-rpc.publicnode.com
     https://rpc.sepolia.org
     https://auth.privy.io
-    https://api.privy.io;
+    https://api.privy.io
+    https://*.supabase.co;
 ">
 <title>I'M THE GODDAMN MAYOR</title>
 <link rel="icon" type="image/svg+xml" href="src/favicon.svg">

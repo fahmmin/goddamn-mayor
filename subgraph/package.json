@@ -7,9 +7,9 @@
     "manifest": "node build-manifest.js",
     "codegen": "npm run manifest && graph codegen",
     "build": "npm run codegen && graph build",
-    "deploy": "graph deploy --node https://api.studio.thegraph.com/deploy/ goddamn-mayor",
-    "create-local": "graph create --node http://localhost:8020/ goddamn-mayor",
-    "deploy-local": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 goddamn-mayor"
+    "deploy": "graph deploy --node https://api.studio.thegraph.com/deploy/ mayor",
+    "create-local": "graph create --node http://localhost:8020/ mayor",
+    "deploy-local": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 mayor"
   },
   "dependencies": {
     "@graphprotocol/graph-cli": "0.97.1",

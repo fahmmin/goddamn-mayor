@@ -5,8 +5,19 @@
  */
 import { createPublicClient, http, getAddress } from 'viem';
 import { sepolia } from 'viem/chains';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { ENS, CHAIN_ID } from './addresses.js';
+
+/* Same .env load as deploy.js, so `npm --prefix chain run preflight` answers
+ * the same question whether or not the caller exported anything first.
+ * Absent is fine - this run is read-only and falls back to the public node. */
+const ENV_FILE = new URL('../.env', import.meta.url);
+if (existsSync(ENV_FILE)) {
+  for (const line of readFileSync(ENV_FILE, 'utf8').split('\n')) {
+    const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*?)\s*$/);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+  }
+}
 
 const RPC = process.env.SEPOLIA_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com';
 const ROOT = (process.env.CITY_ROOT || 'cityhall.eth').replace(/\.eth$/, '');
@@ -54,13 +65,23 @@ if (free) {
   }
 }
 
-if (process.env.DEPLOYER_PRIVATE_KEY) {
+/* 0x optional, exactly as deploy.js accepts it - the check that tells you
+ * whether the deploy will work must not reject the key the deploy takes. */
+const RAW_KEY = (process.env.DEPLOYER_PRIVATE_KEY || '').trim().replace(/^0x/, '');
+if (RAW_KEY && !/^[0-9a-fA-F]{64}$/.test(RAW_KEY)) {
+  console.log('\n  deployer');
+  ok(false, 'DEPLOYER_PRIVATE_KEY is set but is not a 32-byte hex key');
+} else if (RAW_KEY) {
   const { privateKeyToAccount } = await import('viem/accounts');
-  const acct = privateKeyToAccount(process.env.DEPLOYER_PRIVATE_KEY);
+  const acct = privateKeyToAccount('0x' + RAW_KEY);
   const bal = await client.getBalance({ address: acct.address });
   console.log('\n  deployer');
   console.log('        ' + acct.address + '   ' + (Number(bal) / 1e18).toFixed(4) + ' ETH');
   ok(bal > 0n, 'deployer is funded');
+  /* A taken name only matters if somebody else holds it. */
+  if (!free && owner.toLowerCase() === acct.address.toLowerCase()) {
+    console.log('        ' + ROOT + '.eth is held by THIS key - carry on');
+  }
 } else {
   console.log('\n  deployer  (no DEPLOYER_PRIVATE_KEY set - read-only run)');
 }

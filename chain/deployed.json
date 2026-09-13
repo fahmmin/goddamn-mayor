@@ -1,0 +1,90 @@
+{
+  "funds": {
+    "token": "0x768f42455a2d082e23ceef7d51e5787c82d67a39"
+  },
+  "root": {
+    "name": "cityhall.eth",
+    "label": "cityhall",
+    "owner": "0x77A6134955c8409A6D74534831B74286EE7fd1Ec",
+    "adopted": true
+  },
+  "registry": {
+    "address": "0x13f44e08710548E39df3eE4eBA42E8924d516db9"
+  },
+  "offices": {
+    "mayor": {
+      "label": "mayor",
+      "expiry": 1791709781,
+      "role": "16777216"
+    },
+    "deputy": {
+      "label": "deputy",
+      "expiry": 1791709781
+    }
+  },
+  "districts": {
+    "downtown": {
+      "id": 0,
+      "registry": "0xC3a5CAB5e24B2b53EFE9A7875480469AB284f91c",
+      "expiry": 1818320982
+    },
+    "midtown": {
+      "id": 1,
+      "registry": "0xd2632b34651aC1dDe73A30c1B5ac3ed0481D5863",
+      "expiry": 1818320982
+    },
+    "riverside": {
+      "id": 2,
+      "registry": "0x2aE77346bc2F3CCEc5E05597CE9dfA8bc2920909",
+      "expiry": 1818320982
+    },
+    "uptown": {
+      "id": 3,
+      "registry": "0x8d1A09c34167c390420C9f503037E48895b5B9fA",
+      "expiry": 1818320982
+    },
+    "westside": {
+      "id": 4,
+      "registry": "0xdBA5f6f69b3845C0E5Db0571aE11b1C3AE1DFF2B",
+      "expiry": 1818320982
+    },
+    "southside": {
+      "id": 5,
+      "registry": "0xAA2AD2540183E7349309cd61f802bA51C6da8Bf8",
+      "expiry": 1818320982
+    },
+    "wharves": {
+      "id": 6,
+      "registry": "0x125BC38301B4F3E0be000b7D9828ab83620d11A6",
+      "expiry": 1818320982
+    },
+    "redhook": {
+      "id": 7,
+      "registry": "0xcB2035676a5F42e0D8f814cB6d7f4604C7f02437",
+      "expiry": 1818320982
+    },
+    "airfield": {
+      "id": 8,
+      "registry": "0xe59c117d66EcF741fBC5ac492b2f6A66D87f4190",
+      "expiry": 1818320982
+    }
+  },
+  "token": {
+    "address": "0x1a2ff1ab4be9e56ddaa0f845b97c1ea4faa9cfce"
+  },
+  "oracle": {
+    "address": "0x51c64a4668d879528537c1e4e1fc0ec8d9afd88a",
+    "writeRole": "16777216"
+  },
+  "vaults": {
+    "downtown": "0x4bd31b7fec871db53ba07db1962621811669d4ca",
+    "midtown": "0xbe27549d781800ea3135dcde364a63ad66ee11dd",
+    "riverside": "0xa094d916d2740e5f12d6bbe57a5557b82339ab25",
+    "uptown": "0x43ef6ec50500475e5e6f53ea8af5940c121b11c8",
+    "westside": "0x793bde5dc50057f09cbdbeeacf2117793367a990",
+    "southside": "0x8a824c4e3273b99d4614171da9634d5c44365442",
+    "wharves": "0x7b91031c8766ffd125fbb3495ce329cada43c360",
+    "redhook": "0x21708eb27b8cd69234a428422fa7d07f6b21ae4b",
+    "airfield": "0x45deaf0b86e89bcef616b4e5cfa3abab9dc452cd"
+  }
+}

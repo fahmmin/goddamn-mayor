@@ -11,7 +11,12 @@ build/
 web3/bundle.js
 .playwright-mcp/
 chain/build/
-chain/deployed.json
+# chain/deployed.json is NOT ignored: it is the deployment manifest - contract
+# addresses and tx hashes, all public on-chain data - and the build reads it to
+# generate web3/config.json. A build server has no other way to learn them.
+# chain/deployed.json
 web3/node_modules/
 web3/config.json
 web3/bundle.js
+api/node_modules/
+api/node_modules/

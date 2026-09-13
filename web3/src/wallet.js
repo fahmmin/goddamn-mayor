@@ -37,6 +37,24 @@ export function login () {
 /* The cached session. No network, safe to call every frame. */
 export function currentUser () { return wallet; }
 
+/* The signed proof of who this is, for anything outside the chain that has to
+ * trust the session - today the city Edge Function. A short-lived ES256 JWT
+ * whose sub is the user's DID; Privy refreshes it, so ask each time rather
+ * than holding one. Null whenever nobody is signed in, which is ordinary. */
+export async function accessToken () {
+  if (!privy) return null;
+  try { return await privy.getAccessToken(); } catch (e) { return null; }
+}
+
+/* The DID, which is the key the saved city is stored under. */
+export async function currentDid () {
+  if (!privy) return null;
+  try {
+    const { user } = await privy.user.get();
+    return (user && user.id) || null;
+  } catch (e) { return null; }
+}
+
 // ---------------------------------------------------------------- DOM bits
 
 function el (tag, cls, parent, text) {

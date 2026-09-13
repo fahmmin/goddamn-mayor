@@ -11,11 +11,13 @@
  */
 import { createPublicClient, http, formatUnits, parseUnits } from 'viem';
 import { sepolia } from 'viem/chains';
-import { mountWallet, getWallet, login, currentUser } from './wallet.js';
+import { mountWallet, getWallet, login, currentUser, accessToken, currentDid } from './wallet.js';
 import { ORACLE_ABI, VAULT_ABI, ERC20_ABI } from './abi.js';
 import * as graph from './graph.js';
+import * as cloud from './cloud.js';
 
 const POLL_MS = 10000;          // how often we ask the chain for a new snapshot
+const CLOUD_MS = 20000;         // how often a changed city is uploaded
 /* History changes only when the oracle is written, which is once per term
    interval - polling it at the snapshot rate would be a request a second for
    a series that moves once a week. */
@@ -234,6 +236,56 @@ export async function balances () {
 
 // ---------------------------------------------------------------- boot
 
+/* Signing in is also when the city list arrives.
+ *
+ * The shell calls this and then decides what to show, so it must resolve
+ * with enough to make that choice. It never rejects - a cancelled login and
+ * an unreachable cloud are both ordinary, and the door behind them opens
+ * either way. */
+async function loginAndSync () {
+  const w = await login();
+  if (!w || !cloud.configured()) return w;
+  try {
+    const did = await currentDid();
+    const token = await accessToken();
+    if (!token) return w;
+    myCities = await cloud.list(token, did);
+  } catch (e) { myCities = null; }
+  return w;
+}
+
+let myCities = null;
+
+/* What the shell may ask about stored cities. Deliberately small: what is
+ * there, open one, start a new one, save this one. */
+const cloudApi = {
+  configured: cloud.configured,
+  playing: cloud.playing,
+
+  /* [{ id, name, day, updated_at }] - never the saves themselves. */
+  cities: () => myCities || [],
+
+  /* Download one and move it into the live city. */
+  open: async (id) => {
+    const token = await accessToken();
+    if (!token) return false;
+    const row = await cloud.pull(token, id);
+    return row && row.save ? cloud.adopt(row.save) : false;
+  },
+
+  /* Give the city just started its own row, so it does not overwrite one. */
+  startNew: async (name) => {
+    const s = window.MM && window.MM.state;
+    const r = await cloud.create(accessToken, s, name);
+    if (r && r.id) myCities = [{ id: r.id, name: r.name, day: r.day, updated_at: r.updated_at }]
+      .concat(myCities || []);
+    return r;
+  },
+
+  save: (s) => cloud.pushNow(accessToken, s || (window.MM && window.MM.state)),
+  reset: () => { myCities = null; cloud.reset(); }
+};
+
 async function boot () {
   cfg = await loadConfig();
   if (!cfg) return;                               // not configured; game plays on
@@ -260,6 +312,8 @@ async function boot () {
 
   mountWallet({ cfg, onChange: snapshot, api: { pushNow, deposit, drawFaucet, balances } });
 
+  cloud.configure(cfg);
+
   if (graph.configure(cfg)) {
     await history();
     setInterval(history, HISTORY_MS);
@@ -267,6 +321,11 @@ async function boot () {
 
   await snapshot();
   setInterval(snapshot, POLL_MS);
+
+  /* Upload on a slow cadence rather than on every autosave. pushNow skips
+   * when the city is byte-identical to the last upload and when nobody has
+   * signed in, so a paused or logged-out game costs nothing. */
+  setInterval(() => { if (state) cloud.pushNow(accessToken, state); }, CLOUD_MS);
 
   /* Push on a game-day cadence rather than a wall-clock one, so a paused game
    * never writes and a fast-forwarded one does not spam. */
@@ -276,7 +335,7 @@ async function boot () {
     if ((state.day || 0) - lastPushDay >= PUSH_EVERY_DAYS) pushNow(false);
   }, 4000);
 
-  window.MM_CHAIN = { snapshot, history, pushNow, deposit, drawFaucet, balances, login, currentUser, graph, cfg };
+  window.MM_CHAIN = { snapshot, history, pushNow, deposit, drawFaucet, balances, login: loginAndSync, currentUser, graph, cloud: cloudApi, cfg };
 }
 
 boot().catch(e => console.warn('[chain] boot failed, game continues:', e));

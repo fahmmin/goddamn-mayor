@@ -59,6 +59,7 @@ const ART = JSON.parse(fs.readFileSync(path.join(HERE, 'build', 'contracts.json'
 const abiOf = f => JSON.parse(fs.readFileSync(path.join(HERE, 'abi', f), 'utf8')).abi;
 const REGISTRAR_ABI = abiOf('ETHRegistrar.json');
 const REGISTRY_ABI = abiOf('UserRegistryImpl.json');
+const ETH_REGISTRY_ABI = abiOf('ETHRegistry.json');
 const FACTORY_ABI = abiOf('VerifiableFactory.json');
 const ERC20_ABI = parseAbi([
   'function mint(address to, uint256 amount)',
@@ -119,6 +120,8 @@ const TERM_SECONDS = 60n * 60n * 24n * 28n;   // MIN_REGISTER_DURATION
  * city's records is, literally, setting its resolver data. */
 const WRITE_ROLE = ROLE.SET_RESOLVER;
 
+const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
+
 // ===========================================================================
 
 console.log('\n  deployer   ' + account.address);
@@ -148,7 +151,25 @@ await stage('root', async () => {
   const available = await pub.readContract({
     address: ENS.ETHRegistrar, abi: REGISTRAR_ABI, functionName: 'isAvailable', args: [ROOT_LABEL]
   });
-  if (!available) throw new Error(ROOT_LABEL + '.eth is taken - set CITY_ROOT in .env to a free name');
+  /* Taken is only fatal when somebody ELSE holds it. A re-run after
+   * deployed.json is lost finds the city's own name already registered to
+   * this very key - refusing that would send you off to rename a city you
+   * already own. Adopt it and carry on; the later stages are idempotent. */
+  if (!available) {
+    const held = await pub.readContract({
+      address: ENS.ETHRegistry, abi: ETH_REGISTRY_ABI, functionName: 'findOwner', args: [ROOT_LABEL]
+    });
+    if (held.toLowerCase() !== account.address.toLowerCase()) {
+      throw new Error(ROOT_LABEL + '.eth is taken by ' + held +
+        ' - set CITY_ROOT in .env to a free name');
+    }
+    const expiry = await pub.readContract({
+      address: ENS.ETHRegistry, abi: ETH_REGISTRY_ABI, functionName: 'findExpiry', args: [ROOT_LABEL]
+    });
+    log('already registered to this key, expires ' + new Date(Number(expiry) * 1000).toISOString());
+    D.root = { name: ROOT_NAME, label: ROOT_LABEL, owner: account.address, adopted: true };
+    return;
+  }
 
   const secret = '0x' + Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');
   const duration = REGISTRAR.MIN_REGISTER_DURATION;
@@ -175,9 +196,14 @@ await stage('root', async () => {
 
 // ---- the city's own registry ----------------------------------------------
 await stage('registry', async () => {
-  const addr = await deployUserRegistry('city');
+  const addr = await deployUserRegistry('city', ENS.ETHRegistry, ROOT_LABEL);
   D.registry = { address: addr };
 
+  const already = await existingSubregistry(ENS.ETHRegistry, ROOT_LABEL);
+  if (already && already.toLowerCase() === addr.toLowerCase()) {
+    log(ROOT_NAME + ' already points at it');
+    return;
+  }
   const tokenId = await pub.readContract({
     address: ENS.ETHRegistry, abi: REGISTRY_ABI, functionName: 'findTokenId', args: [ROOT_LABEL]
   });
@@ -188,9 +214,15 @@ await stage('registry', async () => {
 
 /* UserRegistry instances are proxies minted by the Verifiable Factory. The
  * factory's event carries the address; salt is derived from the label so a
- * re-run is deterministic rather than producing a second orphan registry. */
-async function deployUserRegistry (label) {
-  const salt = BigInt('0x' + Buffer.from(label.padEnd(8, '_')).toString('hex'));
+ * re-run is deterministic rather than producing a second orphan registry.
+ *
+ * That determinism cuts both ways: CREATE2 reverts the second time, so a
+ * re-run after deployed.json is lost cannot simply redeploy. It does not
+ * need to. The registry we want is whatever `parent` already points at for
+ * `label` - one view call, and it is the registry the CITY uses rather than
+ * merely one this key once made. */
+async function deployUserRegistry (saltLabel, parent, label) {
+  const salt = BigInt('0x' + Buffer.from(saltLabel.padEnd(8, '_')).toString('hex'));
   const init = {
     abi: REGISTRY_ABI, functionName: 'initialize',
     args: [account.address, ROLE.REGISTRAR | ROLE.UNREGISTER | ROLE.RENEW |
@@ -206,10 +238,18 @@ async function deployUserRegistry (label) {
    * beats scraping it back out of the receipt. It also surfaces a revert
    * before the gas is spent, which matters when a re-run may collide with a
    * salt this deployer has already used. */
-  const { result: predicted } = await pub.simulateContract({ ...call, account });
+  let predicted;
+  try {
+    ({ result: predicted } = await pub.simulateContract({ ...call, account }));
+  } catch (e) {
+    const existing = await existingSubregistry(parent, label);
+    if (!existing) throw e;
+    log('registry ' + saltLabel.padEnd(10) + existing + '  (already deployed, adopted)');
+    return existing;
+  }
   const hash = await wal.writeContract(call);
   const r = await pub.waitForTransactionReceipt({ hash });
-  if (r.status !== 'success') throw new Error('registry deploy reverted for ' + label);
+  if (r.status !== 'success') throw new Error('registry deploy reverted for ' + saltLabel);
 
   let addr = predicted;
   for (const l of r.logs) {
@@ -218,8 +258,23 @@ async function deployUserRegistry (label) {
       if (ev.eventName === 'ProxyDeployed') { addr = ev.args.proxyAddress; break; }
     } catch { /* not a factory event */ }
   }
-  log('registry ' + label.padEnd(10) + addr);
+  log('registry ' + saltLabel.padEnd(10) + addr);
   return addr;
+}
+
+/* What registry does `parent` already hand out for `label`?
+ *
+ * Deliberately a view call and not a log search: the deploy RPC may be a
+ * free-tier key, and those cap eth_getLogs at a ten-block range - a window
+ * too narrow to find anything and wide enough to look like an empty result. */
+async function existingSubregistry (parent, label) {
+  if (!parent || !label) return null;
+  try {
+    const addr = await pub.readContract({
+      address: parent, abi: REGISTRY_ABI, functionName: 'getSubregistry', args: [label]
+    });
+    return addr && addr !== ZERO_ADDR ? addr : null;
+  } catch { return null; }
 }
 
 // ---- offices ---------------------------------------------------------------
@@ -231,20 +286,40 @@ async function deployUserRegistry (label) {
 await stage('offices', async () => {
   const reg = D.registry.address;
   const expiry = BigInt(Math.floor(Date.now() / 1000)) + TERM_SECONDS;
-  const ZERO = '0x0000000000000000000000000000000000000000';
   const resolver = ENS.PublicResolverV2 || ENS.ENSV2Resolver;
 
-  await send('register mayor (expiring, non-transferable)', {
-    address: reg, abi: REGISTRY_ABI, functionName: 'register',
-    args: ['mayor', account.address, ZERO, resolver, WRITE_ROLE, expiry]
-  });
+  /* register() reverts on a name that is still live, so a re-run must ask
+   * first. Held-by-this-key is the good case: the office already exists. */
+  const held = async label => {
+    try {
+      const owner = await pub.readContract({
+        address: reg, abi: REGISTRY_ABI, functionName: 'findOwner', args: [label]
+      });
+      return owner && owner !== ZERO_ADDR ? owner : null;
+    } catch { return null; }
+  };
+
+  const mayorOwner = await held('mayor');
+  if (mayorOwner) {
+    log('mayor already registered to ' + mayorOwner);
+  } else {
+    await send('register mayor (expiring, non-transferable)', {
+      address: reg, abi: REGISTRY_ABI, functionName: 'register',
+      args: ['mayor', account.address, ZERO_ADDR, resolver, WRITE_ROLE, expiry]
+    });
+  }
 
   /* The bonus bullet: an agent whose permissions ARE its name. deputy may
    * read and propose; it never holds WRITE_ROLE, so it cannot push. */
-  await send('register deputy (agent namespace, no write role)', {
-    address: reg, abi: REGISTRY_ABI, functionName: 'register',
-    args: ['deputy', account.address, ZERO, resolver, ROLE.RENEW, expiry]
-  });
+  const deputyOwner = await held('deputy');
+  if (deputyOwner) {
+    log('deputy already registered to ' + deputyOwner);
+  } else {
+    await send('register deputy (agent namespace, no write role)', {
+      address: reg, abi: REGISTRY_ABI, functionName: 'register',
+      args: ['deputy', account.address, ZERO_ADDR, resolver, ROLE.RENEW, expiry]
+    });
+  }
 
   D.offices = { mayor: { label: 'mayor', expiry: Number(expiry), role: WRITE_ROLE.toString() },
     deputy: { label: 'deputy', expiry: Number(expiry) } };
@@ -259,12 +334,19 @@ await stage('districts', async () => {
   for (let i = 0; i < DISTRICTS.length; i++) {
     const label = DISTRICTS[i];
     if (D.districts[label]) { log(label + ' already registered'); continue; }
-    const sub = await deployUserRegistry(label);
-    await send('register ' + label + '.' + ROOT_NAME, {
-      address: reg, abi: REGISTRY_ABI, functionName: 'register',
-      args: [label, account.address, sub, resolver,
-        ROLE.REGISTRAR | ROLE.SET_RESOLVER | ROLE.CAN_TRANSFER, expiry]
-    });
+    const sub = await deployUserRegistry(label, reg, label);
+    const owner = await pub.readContract({
+      address: reg, abi: REGISTRY_ABI, functionName: 'findOwner', args: [label]
+    }).catch(() => ZERO_ADDR);
+    if (owner && owner !== ZERO_ADDR) {
+      log(label + '.' + ROOT_NAME + ' already registered');
+    } else {
+      await send('register ' + label + '.' + ROOT_NAME, {
+        address: reg, abi: REGISTRY_ABI, functionName: 'register',
+        args: [label, account.address, sub, resolver,
+          ROLE.REGISTRAR | ROLE.SET_RESOLVER | ROLE.CAN_TRANSFER, expiry]
+      });
+    }
     D.districts[label] = { id: i, registry: sub, expiry: Number(expiry) };
     save();
   }

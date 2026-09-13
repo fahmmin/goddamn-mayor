@@ -7,13 +7,20 @@
   "scripts": {
     "start": "node tools/serve.js",
     "serve": "node tools/serve.js",
-    "test": "node src/sim.test.js && node src/districts.test.js && node src/ens.test.js && node src/quests.test.js && node tools/tour-check.js",
+    "test": "node src/sim.test.js && node src/districts.test.js && node src/ens.test.js && node src/quests.test.js && node web3/src/cloud.test.js && node lib/privy.test.mjs && node tools/tour-check.js",
     "smoke": "node smoke.js",
     "web3:build": "npm --prefix web3 run build",
+    "api": "node tools/city-server.mjs",
+    "api:migrate": "node tools/city-migrate.mjs",
+    "api:check": "node tools/city-check.mjs",
     "web3:config": "node web3/make-config.js",
     "chain:deploy": "node chain/deploy.js",
     "chain:verify": "node chain/verify-gate.js",
-    "chain:push": "node chain/push-city.js"
+    "chain:push": "node chain/push-city.js",
+    "vercel-build": "node web3/make-config.js && npm --prefix web3 ci --no-audit --no-fund && npm --prefix web3 run build"
   },
-  "productName": "I'm the Goddamn Mayor"
+  "productName": "I'm the Goddamn Mayor",
+  "dependencies": {
+    "pg": "^8.13.0"
+  }
 }
