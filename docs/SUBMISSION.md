@@ -234,12 +234,32 @@ the oracle actually wrote. That is the difference between a chart of the game
 and a chart of the record, and the panel's badge reads `graph` rather than
 `live` precisely when it is showing the latter.
 
-> **Deployment state, stated plainly.** The eleven vault-and-oracle sources are
-> live at `…/mayor/v0.1.0`. The registry sources — `Name`, `NameEvent`,
-> `ResourceLink` — are built and committed but ship in the next deployed
-> version, so the two queries above are answerable from this repo rather than
-> from that endpoint until it is redeployed. Studio endpoints are versioned, so
-> the redeploy also changes the URL the client reads.
+Live at [`…/mayor/v0.2.0`](https://api.studio.thegraph.com/query/1760255/mayor/v0.2.0),
+and checkable without a wallet:
+
+```bash
+cd subgraph && npm run verify
+```
+
+```
+  ok    the registry is indexed at all  (11 names)
+  ok    mayor.cityhall.eth is in the index
+  ok      it carries an expiry  (2026-10-10)
+  ok      the index agrees it may write  (roles 16777216)
+  ok      which is the write role the oracle demands  (WRITE_ROLE 16777216)
+  ok    deputy.cityhall.eth is in the index
+  ok      it cannot write  (roles 65536)
+  ok      and has never once held the write role  (2 role events checked)
+  ok    the oracle half is indexed too  (16 pushes, day 1012)
+  ok    all nine vaults are indexed  (9/9)
+
+  10 passed, 0 failed
+```
+
+`65536` is `ROLE_RENEW` and nothing else. The Deputy holds a name, that name
+carries the renew role, and the write bit has never been set on it in any role
+event the registry ever emitted — which is the agent-as-namespace bullet above,
+stated as data rather than as a promise.
 
 **It is still not entered for The Graph's Composable or Standardized prize, and
 the honest reason is that it does not qualify.** Indexing two kinds of contract
