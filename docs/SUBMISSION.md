@@ -128,23 +128,23 @@ never sell it."
 
 | What | Address |
 |---|---|
-| **CityOracle** — the ENS-gated write path | [`0x82c1d7516daf174d5689ec1ab9ef9dc3f13c72db`](https://sepolia.etherscan.io/address/0x82c1d7516daf174d5689ec1ab9ef9dc3f13c72db) |
-| **CityUSD** — faucet ERC-20 | [`0xc8ea547635f26c381f22fb971d436b6ca9b05461`](https://sepolia.etherscan.io/address/0xc8ea547635f26c381f22fb971d436b6ca9b05461) |
+| **CityOracle** — the ENS-gated write path | [`0x51c64a4668d879528537c1e4e1fc0ec8d9afd88a`](https://sepolia.etherscan.io/address/0x51c64a4668d879528537c1e4e1fc0ec8d9afd88a) |
+| **CityUSD** — faucet ERC-20 | [`0x1a2ff1ab4be9e56ddaa0f845b97c1ea4faa9cfce`](https://sepolia.etherscan.io/address/0x1a2ff1ab4be9e56ddaa0f845b97c1ea4faa9cfce) |
 | **City registry** (`cityhall.eth`) | [`0x13f44e08710548E39df3eE4eBA42E8924d516db9`](https://sepolia.etherscan.io/address/0x13f44e08710548E39df3eE4eBA42E8924d516db9) |
 
 Nine districts, each with **its own `UserRegistry`** and **its own ERC-4626 vault**:
 
 | District | ENS name | Registry | Vault |
 |---|---|---|---|
-| Downtown | `downtown.cityhall.eth` | `0xC3a5CAB5…f91c` | `0x8403bcfc…fa15` |
-| Midtown | `midtown.cityhall.eth` | `0xd2632b34…5863` | `0x756d9f8a…456a` |
-| Riverside Towers | `riverside.cityhall.eth` | `0x2aE77346…0909` | `0xba8d7f4d…7f11` |
-| Uptown High Street | `uptown.cityhall.eth` | `0x8d1A09c3…B9fA` | `0xc2f28dbd…ea89` |
-| The West Side | `westside.cityhall.eth` | `0xdBA5f6f6…FF2B` | `0xe2e779c6…308f` |
-| South Side | `southside.cityhall.eth` | `0xAA2AD254…8Bf8` | `0x35da4fec…30b4` |
-| Works & Wharves | `wharves.cityhall.eth` | `0x125BC383…11A6` | `0xed9e44b8…2e2f` |
-| Red Hook | `redhook.cityhall.eth` | `0xcB203567…2437` | `0x383b4b13…17ae` |
-| Airport Low-Rise | `airfield.cityhall.eth` | `0xe59c117d…4190` | `0xf4bac990…e43f` |
+| Downtown | `downtown.cityhall.eth` | `0xC3a5CAB5…f91c` | `0x4bd31b7f…d4ca` |
+| Midtown | `midtown.cityhall.eth` | `0xd2632b34…5863` | `0xbe27549d…11dd` |
+| Riverside Towers | `riverside.cityhall.eth` | `0x2aE77346…0909` | `0xa094d916…ab25` |
+| Uptown High Street | `uptown.cityhall.eth` | `0x8d1A09c3…B9fA` | `0x43ef6ec5…11c8` |
+| The West Side | `westside.cityhall.eth` | `0xdBA5f6f6…FF2B` | `0x793bde5d…a990` |
+| South Side | `southside.cityhall.eth` | `0xAA2AD254…8Bf8` | `0x8a824c4e…5442` |
+| Works & Wharves | `wharves.cityhall.eth` | `0x125BC383…11A6` | `0x7b91031c…c360` |
+| Red Hook | `redhook.cityhall.eth` | `0xcB203567…2437` | `0x21708eb2…ae4b` |
+| Airport Low-Rise | `airfield.cityhall.eth` | `0xe59c117d…4190` | `0x45deaf0b…52cd` |
 
 Full addresses in [`chain/deployed.json`](../chain/deployed.json).
 
