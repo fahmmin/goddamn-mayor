@@ -1,5 +1,7 @@
 # I'M THE GODDAMN MAYOR
 
+**Play it: <https://im-the-mayor.vercel.app/>**
+
 An isometric city-builder that runs in a browser tab. You get four years, a
 treasury, and a city that complains loudly when you get it wrong. Zone it, wire
 it with roads and buses, pass the platform you ran on, and try to still be

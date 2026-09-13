@@ -10,7 +10,7 @@
 
 | | |
 |---|---|
-| **Live demo** | `npm run serve` → http://localhost:8080 |
+| **Live demo** | **<https://im-the-mayor.vercel.app/>** — nothing to install, no wallet needed to look around |
 | **Chain** | Sepolia (`11155111`) |
 | **Root name** | [`cityhall.eth`](https://sepolia.app.ens.domains/cityhall.eth) |
 | **Tracks** | ENS — Best Use of ENSv2 · Privy — B2B Financial Product + Best Financial Flow |
