@@ -353,14 +353,18 @@ window.MM = window.MM || {};
     var t = ease(clamp(seg - i, 0, 1));
     var a = STOPS[i], b = STOPS[i + 1] || a;
 
-    var r = MM.renderer, s = MM.state;
+    var r = MM.renderer;
     if (r) {
       r.scale = lerp(a.z, b.z, t);
       r.centerOn(lerp(a.tx, b.tx, t), lerp(a.ty, b.ty, t));
       if (r.clampCamera) r.clampCamera();
     }
-    /* Time of day is a sim field, so the light changes as you ride. The game
-       clock is paused, which is the only reason writing it here is safe. */
+    /* Time of day is a sim field, so the light changes as you ride. It is
+       written on the city being SHOWN - which on the title screen is the
+       showcase and not the player's save (see _display). On the pause menu
+       those are the same object, and the game clock is stopped, which is the
+       only reason writing it there is safe. */
+    var s = (r && r.showing) || MM.state;
     if (s) s.tick = Math.round(lerp(a.hour, b.hour, t)) % 24;
 
     /* Three states, not two. "passed" is what makes the ledger accumulate as
@@ -383,6 +387,58 @@ window.MM = window.MM || {};
     }
   };
 
+  // ---- the city the title screen rides over --------------------------------
+
+  /* Every stop on the line is a real address in one particular city: the
+     airport at (1,1), the hero tower at (21,21), the container port at
+     (30,37). That city is demo.js's plan, and a visitor with no save was
+     already riding it, because it is what game.js loads when there is
+     nothing to load.
+     A visitor WITH a save rode their own city instead - and if they had
+     clicked Break ground, that is one road and a few lots. The pitch ran over
+     an empty field with every line of copy pointing at grass. So the title
+     screen brings its own city.
+
+     It is handed to the RENDERER, not written into MM.state. render.js only
+     ever reads a state, so that is all it takes - and it is the only version
+     of this that cannot cost somebody their city, because the save, the
+     20-second autosave, the cloud push and the Continue button all go on
+     reading the one object they always read. */
+  Shell.prototype._showcase = function () {
+    if (this._city !== undefined) return this._city;
+    this._city = null;
+    var LT = MM.lots, before = LT && LT.pins ? LT.pins() : null;
+    try { if (MM.buildDemoCity) this._city = MM.buildDemoCity(); } catch (e) { this._city = null; }
+    /* build() installs its plan's landmark pins as it goes, and those are
+       module state, not city state. Take the copy this city needs and put
+       back whatever the live one had: building the showcase must not be a
+       change to the city being played. */
+    if (LT && LT.pins) { this._cityPins = LT.pins(); LT.pins(before); }
+    return this._city;
+  };
+
+  /* Put the showcase in front of the renderer, or take it away again.
+     Bumping rev is load-bearing both ways: lots.js caches its plan against
+     s.rev and render.js diffs a per-tile signature against it, and neither
+     has any other way to notice that the city underneath has been replaced
+     whole. The pins travel with the city for the same reason. */
+  Shell.prototype._display = function (on) {
+    var r = MM.renderer, LT = MM.lots;
+    if (!r) return;
+    var city = (on && this._showcase()) || null;
+    if ((r.showing || null) === city) return;
+
+    if (city) {
+      if (LT && LT.pins) { this._savePins = LT.pins(); LT.pins(this._cityPins); }
+    } else if (LT && LT.pins && this._savePins !== undefined) {
+      LT.pins(this._savePins);
+      this._savePins = undefined;
+    }
+    r.showing = city;
+    var now = city || MM.state;
+    if (now) now.rev = (now.rev | 0) + 1;
+  };
+
   // ---- open / close -------------------------------------------------------
 
   Shell.prototype._gameBusy = function () {
@@ -400,6 +456,15 @@ window.MM = window.MM || {};
     /* Borrow the camera, remember exactly where it was. Resuming a paused
        game must not teleport the player to wherever the ride ended. */
     if (r) this._cam = { ox: r.ox, oy: r.oy, scale: r.scale };
+    /* Tell the renderer this camera is being flown, not driven. The ride
+       sweeps 0.40 to 1.60 in one scroll, which is four times the zoom range a
+       wheel burst covers, and without this the cache hits its stretch limit
+       partway down the airfield-to-downtown leg and stops the scroll dead
+       while it redraws the city. Given back in _land(). */
+    if (r) r.cinematic = true;
+    /* The title screen rides the showcase; the pause menu rides the city
+       being played, because that is the one the player is coming back to. */
+    this._display(this.mode === 'title');
     document.body.classList.add('obs-open');
     this.root.hidden = false;
     this.showPanel(null);
@@ -407,6 +472,9 @@ window.MM = window.MM || {};
 
     if (this.lenis) this.lenis.resize();
     this.toTop();
+    /* The camera is now on stop 0, so the next frame the renderer paints is
+       the title shot. Let the canvas show (see body.obs-boot in style.css). */
+    document.body.classList.remove('obs-boot');
   };
 
   /* Always open at the first stop.
@@ -561,6 +629,17 @@ window.MM = window.MM || {};
     this.root.classList.add('leaving');
     if (MM.audio) { MM.audio.play('ui'); if (MM.audio.ambient) MM.audio.ambient(true); }
 
+    /* Hand the player's own city back before the flight rather than after it,
+       so the camera flies over the city it is about to land in instead of
+       swapping it out from under the reader at touchdown. The hour goes
+       across with it: the ride's light is copied onto the real state first,
+       so the lerp below starts where the ride ended and the sun does not jump
+       at the cut. With no save at all the two cities are the same plan and
+       there is nothing to see here. */
+    var ride = r && r.showing;
+    if (s && ride) s.tick = ride.tick | 0;
+    this._display(false);
+
     var to = this._cam;
     if (!r || !to) { this._land(); return; }
 
@@ -590,6 +669,8 @@ window.MM = window.MM || {};
   Shell.prototype._land = function () {
     var s = MM.state, r = MM.renderer;
     this._flying = false;
+    if (r) r.cinematic = false;               // the player has the camera again
+    this._display(false);                     // and their own city back, if play() has not already
     this.root.hidden = true;
     this.root.classList.remove('leaving');
     document.body.classList.remove('obs-open');
@@ -813,7 +894,15 @@ window.MM = window.MM || {};
          pending timer alive forever, and under Node that alone stops the
          process exiting - smoke.js evaluates this file without game.js, so
          MM.state never arrives and `npm run smoke` would hang, not fail. */
-      if (++tries > 100) return;
+      if (++tries > 100) {
+        /* index.html ships <body class="obs-boot obs-open"> so the city and
+           the HUD are held back from the very first paint rather than shown
+           and then taken away once the shell arrives. If the shell is never
+           coming, hand the page back rather than leaving the game running
+           under a hidden canvas and an invisible HUD. */
+        if (document.body) document.body.classList.remove('obs-open', 'obs-boot');
+        return;
+      }
       setTimeout(boot, 60);
       return;
     }
@@ -825,8 +914,20 @@ window.MM = window.MM || {};
   }
 
   MM.Shell = Shell;
+  /* Boot NOW, not at DOMContentLoaded.
+   *
+   * This file is the last script in the body, so game.js has already run and
+   * MM.state and document.body both exist - there is nothing left to wait
+   * for. Waiting anyway was the whole of the load glitch: DOMContentLoaded
+   * does not fire until every deferred script has run, and web3/bundle.js is
+   * 660KB of deferred chain layer. game.js starts its frame loop the moment
+   * it loads, so for as long as that bundle took, the browser painted the
+   * bare city at the game's own camera with the HUD over it - and then the
+   * shell arrived, snapped the camera to the title framing and faded the HUD
+   * out. Built here instead, the shell's first apply(0) lands before the
+   * renderer's first frame, so the first thing ever painted is the title. */
   if (typeof document !== 'undefined' && document.addEventListener) {
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-    else boot();
+    if (document.body) boot();
+    else document.addEventListener('DOMContentLoaded', boot);
   }
 })(window.MM);

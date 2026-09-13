@@ -755,6 +755,20 @@ body.obs-open { overflow: hidden; }
 body.obs-open #hud { opacity: 0; pointer-events: none; }
 #hud { transition: opacity .45s ease; }
 
+/* Nothing is on the canvas until the shell has pointed the camera at the
+   title stop.
+   game.js starts its frame loop the moment it loads, and shell.js is three
+   script tags further down the body - so if the parser stops for any of them
+   the renderer can get a frame away first, at the camera game.js centred for
+   playing rather than the wide shot the title screen opens on. That frame is
+   the flash of city on load. The class is on <body> in the markup and comes
+   off in Shell.show(), one apply() after the camera is where it belongs; the
+   fade is the same beat the shell itself arrives on, so the city appears with
+   the carriage rather than before it. */
+body.obs-boot { background: #06090a; }
+body.obs-boot #city { opacity: 0; }
+#city { transition: opacity .5s ease .1s; }
+
 .obs-shell {
   position: fixed; inset: 0; z-index: 40;
   font-family: var(--obs-serif); color: var(--obs-ink);

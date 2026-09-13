@@ -29,10 +29,45 @@
     https://*.supabase.co;
 ">
 <title>I'M THE GODDAMN MAYOR</title>
-<link rel="icon" type="image/svg+xml" href="src/favicon.svg">
+<meta name="description" content="You have watched a city get it wrong. The bus line went the wrong way, the money landed in the wrong district. Had that moment? Good. Take the office.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="I'M THE GODDAMN MAYOR">
+<meta property="og:description" content="You have watched a city get it wrong. The bus line went the wrong way, the money landed in the wrong district. Had that moment? Good. Take the office.">
+<meta property="og:url" content="/">
+<meta property="og:image" content="/src/img/og.jpg">
+<meta property="og:image:type" content="image/jpeg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The title screen - I'M THE GODDAMN MAYOR, over an isometric city seen from above.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="I'M THE GODDAMN MAYOR">
+<meta name="twitter:description" content="You have watched a city get it wrong. The bus line went the wrong way, the money landed in the wrong district. Had that moment? Good. Take the office.">
+<meta name="twitter:image" content="/src/img/og.jpg">
+<!-- Icons are relative, so the page still finds them when it is opened from
+     file:// as well as from a host. The card image is the exception: the
+     crawlers that read it resolve it against the site root, and none of them
+     ever see a file:// copy. -->
+<link rel="icon" href="src/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="192x192" href="src/img/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="src/img/icon-512.png">
+<link rel="apple-touch-icon" href="src/img/apple-touch-icon.png">
 <link rel="stylesheet" href="src/style.css">
+<!-- The carriage is 1.9MB and it is the whole of the title screen's conceit.
+     Requested here rather than when shell.js builds the <img>, so it is
+     downloading alongside the scripts instead of after them - otherwise the
+     frame arrives a beat late and the copy sits on a bare city first. -->
+<link rel="preload" as="image" href="src/img/carriage.png">
 </head>
-<body>
+<!-- Both classes come from the markup rather than from script, because
+     there is no earlier moment available: the CSP is script-src 'self', so
+     there is no inline script to set them in, and shell.js is at the bottom
+     of the body. obs-open hides the HUD, which belongs to the game and not to
+     the title screen; obs-boot holds the canvas back until the shell has
+     aimed the camera at the first stop. Setting them from JS instead meant
+     the bare city was painted first and then taken away, which is the flash
+     everyone saw on load. shell.js drops obs-boot as it opens and obs-open
+     when the camera lands in the city. -->
+<body class="obs-boot obs-open">
   <div id="app">
     <canvas id="city"></canvas>
     <div id="hud"></div>

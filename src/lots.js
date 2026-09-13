@@ -41,6 +41,19 @@ window.MM = window.MM || {};
   var PINS = {};
   function pin (x, y, arch, w, h) { PINS[y * GRID + x] = { arch: arch, w: w || 1, h: h || 1 }; planDone = false; }
   function clearPins () { PINS = {}; planDone = false; }
+  /* The whole table, read or written at once. The pins belong to a city, not
+     to this module - demo.js installs its plan's landmarks here while it
+     builds - so anything that shows one city and then another has to carry
+     them across with it, or the airport plot stays pinned over whatever the
+     next city put on those nine blocks. src/shell.js is the caller: it rides
+     the showcase over the player's own save and has to leave the save's pins
+     exactly as it found them. No argument reads; an object writes. */
+  function pins (next) {
+    if (next === undefined) return PINS;
+    PINS = next || {};
+    planDone = false;
+    return PINS;
+  }
 
   var MERGES = {};                     // land this module draws, zone or civic
   MERGES[T.RES] = 1; MERGES[T.COM] = 1; MERGES[T.IND] = 1; MERGES[T.PARK] = 1;
@@ -2588,6 +2601,6 @@ window.MM = window.MM || {};
   MM.lots = {
     plan: plan, role: role, draw: draw, ground: drawGround,
     lotOf: lotOf, lots: lots, shape: shape,
-    pin: pin, clearPins: clearPins, ARCH: ARCH, UNIT: UNIT
+    pin: pin, clearPins: clearPins, pins: pins, ARCH: ARCH, UNIT: UNIT
   };
 })(window.MM);

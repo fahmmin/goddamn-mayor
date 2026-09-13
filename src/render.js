@@ -32,6 +32,28 @@ window.MM = window.MM || {};
      that is the zoomed-right-in case, where sharpness is what you came for
      and there are few enough tiles on screen to rebuild cheaply. */
   var CACHE_DPR_MIN = 1.0;
+  /* How far the cached image may be stretched before it has to be redrawn mid
+     gesture. Generous, and deliberately lopsided: shrinking the cached image
+     only supersamples it and stays sharp, while blowing it up goes soft, so
+     the two ends are not worth the same tolerance. A whole wheel burst rides
+     on one image and sharpens the moment the wheel stops - which is how a map
+     behaves, and much better than the alternative of a 750ms rebuild landing
+     in the middle of the gesture. */
+  var BLIT_MIN = 0.12, BLIT_MAX = 3.00;
+  /* The same bargain, made for a much longer gesture. The shell rides the
+     camera from a whole-city 0.40 out at the title to 1.60 down in the blocks,
+     and it does it in one unbroken scroll - a 4x sweep, which crosses BLIT_MAX
+     partway along the airfield-to-downtown leg and dropped a 200ms rebuild
+     into the middle of the ride, at the same point on the line every single
+     time. Nothing there is a hole: the image is only soft, and it is soft
+     while the camera is flying past it behind a swaying window. So a
+     cinematic camera gets a wider window and sharpens when the ride stops -
+     see `cinematic` in draw(). */
+  var RIDE_MIN = 0.04, RIDE_MAX = 9.00;
+  /* How long the camera has to be still before the cache is redrawn at the
+     scale it is now being shown at. Short enough to feel immediate at the end
+     of a wheel spin, long enough not to fire inside one. */
+  var SETTLE_MS = 180;
   /* The window-light layer is a bloom - soft glows blitted additively at less
      than full alpha - so it carries no detail worth a device pixel. Holding it
      at half the cache's resolution is invisible and takes a second full-size
@@ -200,6 +222,14 @@ window.MM = window.MM || {};
     this.hover = null;
     this.pick = null;                        // src/inspect.js owns this
     this.overlay = 'none';
+    /* Set while something other than a player is flying the camera - the
+       shell's ride, and the flight out of it. src/shell.js owns this; all it
+       buys is a wider stretch window on the static cache (see draw()), so a
+       long sweep does not stop to redraw the city halfway down it. */
+    this.cinematic = false;
+    /* A city to draw INSTEAD of the one the caller passes, for the length of
+       the title screen. src/shell.js owns this too. See draw(). */
+    this.showing = null;
 
     this.clock = 0;          // animation clock (ms), advanced by dtMs
     this.phase = 0.78;       // eased day phase 0..1 (0 = midnight)
@@ -2853,6 +2883,12 @@ window.MM = window.MM || {};
   };
 
   Renderer.prototype.draw = function (s, dtMs) {
+    /* The title screen rides over a city of its own - see src/shell.js. This
+       renderer only ever READS a state, never writes one, so swapping which
+       one it reads is the whole of what that takes: MM.state goes on being
+       the player's own city, and the save, the autosave and the cloud push
+       never see the showcase at all. */
+    if (this.showing) s = this.showing;
     var dt = dtMs > 0 ? (dtMs > 200 ? 200 : dtMs) : 16;
     this.clock += dt;
     this._frames++;
@@ -2923,18 +2959,16 @@ window.MM = window.MM || {};
     var b = this._blitAt();
     // Two things it cannot ride out: a cache that no longer covers what is on
     // screen (that would be a hole), and one stretched far enough to look
-    // soft. Either forces the rebuild even mid-gesture.
-    // How far the cache may be stretched before it has to be redrawn mid
-    // gesture. Generous, and deliberately lopsided: shrinking the cached
-    // image only supersamples it and stays sharp, while blowing it up goes
-    // soft, so the two ends are not worth the same tolerance. A whole wheel
-    // burst rides on one image and sharpens the moment the wheel stops -
-    // which is how a map behaves, and much better than the alternative of a
-    // 750ms rebuild landing in the middle of the gesture.
+    // soft. A hole forces the rebuild whatever the camera is doing. Softness
+    // does not have to: while `cinematic` is set and the camera has not
+    // stopped, the wider RIDE_* window applies and the sharpening is left to
+    // the settle branch below, which is the same trade a wheel burst makes.
+    var lo = BLIT_MIN, hi = BLIT_MAX;
+    if (this.cinematic && this._settleMs < SETTLE_MS) { lo = RIDE_MIN; hi = RIDE_MAX; }
     var must = key !== this._cacheKey || !this._cacheW || !this._cacheCovers() ||
-      b.k < 0.12 || b.k > 3.00;
+      b.k < lo || b.k > hi;
     var rev = s.rev | 0;
-    if (must || (this._cacheScale !== this.scale && this._settleMs >= 180)) {
+    if (must || (this._cacheScale !== this.scale && this._settleMs >= SETTLE_MS)) {
       this._renderStatic(s);
       this._commitSig(s);
       this._cacheKey = key; this._cacheRev = rev;
