@@ -198,10 +198,9 @@ Graph track stays credible as the next step rather than a rewrite.
 
 ## The subgraph — used, but not entered
 
-The city is indexed by [a subgraph on Studio](https://api.studio.thegraph.com/query/1760255/mayor/v0.1.0):
-twelve data sources — the oracle, the CityUSD faucet, all nine vaults, and the
-city's own ENSv2 registry. It is load-bearing rather than decorative, and the
-reason is arithmetic:
+The city is indexed by a subgraph on Studio: twelve data sources — the oracle,
+the CityUSD faucet, all nine vaults, and the city's own ENSv2 registry. It is
+load-bearing rather than decorative, and the reason is arithmetic:
 
 | Question | Over the RPC | Here |
 |---|---|---|
@@ -234,6 +233,13 @@ taken in the browser — real numbers, but gone on reload. Now it is the series
 the oracle actually wrote. That is the difference between a chart of the game
 and a chart of the record, and the panel's badge reads `graph` rather than
 `live` precisely when it is showing the latter.
+
+> **Deployment state, stated plainly.** The eleven vault-and-oracle sources are
+> live at `…/mayor/v0.1.0`. The registry sources — `Name`, `NameEvent`,
+> `ResourceLink` — are built and committed but ship in the next deployed
+> version, so the two queries above are answerable from this repo rather than
+> from that endpoint until it is redeployed. Studio endpoints are versioned, so
+> the redeploy also changes the URL the client reads.
 
 **It is still not entered for The Graph's Composable or Standardized prize, and
 the honest reason is that it does not qualify.** Indexing two kinds of contract

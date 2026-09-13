@@ -121,6 +121,16 @@ async function main () {
 }
 
 main().catch(e => {
-  console.error('\n  ' + String(e.message || e) + '\n');
+  const msg = String(e.message || e);
+  console.error('\n  ' + msg);
+  /* The likeliest way to land here is pointing at the version that was live
+     before the registry sources existed. The GraphQL error for that is about a
+     missing field, which is true but does not suggest the fix. */
+  if (/\bnames?\b/i.test(msg) && /field|type/i.test(msg)) {
+    console.error('\n  this endpoint has no Name entity, so it is almost certainly the\n' +
+      '  version deployed before the registry data source. run `npm run deploy`\n' +
+      '  and point SUBGRAPH_URL at the new version - Studio versions its URLs.');
+  }
+  console.error('');
   process.exit(1);
 });

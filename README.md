@@ -276,6 +276,11 @@ Things that are genuinely unfinished or that will bite you:
   hackathon deadline.
 - **The subgraph is deployed to Studio, not published to the decentralised
   network.** Fine for a demo, rate-limited for anything else.
+- **The registry data source is built but not yet deployed.** `v0.1.0` on Studio
+  is the eleven vault-and-oracle sources; `Name`, `NameEvent` and `ResourceLink`
+  need a `npm run deploy` before they answer anything. Studio versions its
+  endpoints, so that deploy also changes the URL — `SUBGRAPH_URL` has to move
+  with it or the client keeps reading the old version and nothing looks broken.
 - **There is no multiplayer.** The "city is a public company" framing is real in
   the sense that the vaults and names exist, but everyone is playing their own
   city.
