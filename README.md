@@ -69,7 +69,7 @@ resident they attract. There is no build order that wins for free.
 | **Sound** | WebAudio synthesis. No audio files. |
 | **Contracts** | Solidity, compiled with solc-js directly — no Hardhat, no Foundry. ERC-4626 vaults from OpenZeppelin. |
 | **Chain client** | viem + Privy, bundled by esbuild into one 650KB file that loads *beside* the game, never inside it. |
-| **Indexing** | A subgraph on The Graph Studio over the vaults and the oracle. |
+| **Indexing** | A subgraph on The Graph Studio — twelve data sources over the oracle, the faucet, all nine vaults and the ENSv2 registry. It draws the market panel's sparkline (ninety days of valuations: one query here, ninety archive calls over the RPC) and keeps the office's history, which the chain does not — a burned name leaves no state to read. |
 | **Saves** | Postgres (Supabase), behind a small API that verifies a Privy token. |
 | **Hosting** | Static files + two serverless functions. Vercel config included. |
 

@@ -119,3 +119,30 @@ export async function queryHistory (days) {
   for (const k in by) by[k].reverse();       // desc from the query, asc for a chart
   return by;
 }
+
+const Q_OFFICES = `{
+  names(first: 25, orderBy: registeredAt) {
+    label owner expiry roles canWrite active burned registeredAt burnedAt
+  }
+}`;
+
+/* The offices, as the registry recorded them rather than as they stand now.
+ *
+ * The market panel already knows whether the CURRENT mayor can push - index.js
+ * asks the oracle's canPush() over the RPC every ten seconds, and one eth_call
+ * is the right tool for a question about now. This answers the one the RPC
+ * cannot: what the office looked like before it was burned. `unregister()`
+ * leaves no state behind, so after the recall an RPC can only report that
+ * nobody holds mayor.cityhall.eth - not who did, nor that they held the write
+ * role while they signed ninety days of valuations.
+ *
+ * Useful without a wallet and without a signature, which is the point: a judge
+ * can check that deputy.cityhall.eth has canWrite false and has never had a
+ * ROLES_CHANGED event setting the write bit, without trusting the README.
+ *
+ * Same failure discipline as everything else here - null, never a throw.
+ */
+export async function queryOffices () {
+  const d = await query(Q_OFFICES);
+  return d ? (d.names || []) : null;
+}

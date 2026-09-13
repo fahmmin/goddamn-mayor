@@ -2,10 +2,11 @@
  *
  * Writes subgraph.yaml and subgraph/abis/*.json from the deployment that
  * already exists - web3/config.json for the addresses and district names,
- * chain/build/contracts.json for the ABIs.
+ * chain/build/contracts.json for our ABIs, chain/abi for the ENSv2 registry.
  *
- * The manifest is generated rather than written because it has eleven data
- * sources: one oracle, one token and nine vaults that differ only by address.
+ * The manifest is generated rather than written because it has twelve data
+ * sources: one oracle, one token, one registry and nine vaults that differ
+ * only by address.
  * Hand-maintaining that list guarantees it drifts from the deployment the
  * first time a vault is redeployed, and a subgraph indexing a stale address
  * fails by returning nothing, which looks exactly like a subgraph that is
@@ -51,6 +52,30 @@ function writeAbi (name) {
   if (!c || !c.abi) throw new Error('no ABI for ' + name + ' in chain/build/contracts.json');
   fs.mkdirSync(path.join(OUT, 'abis'), { recursive: true });
   fs.writeFileSync(path.join(OUT, 'abis', name + '.json'), JSON.stringify(c.abi, null, 2));
+}
+
+/* The ENSv2 registry is not ours and is not compiled here - its ABI is the
+ * committed one in chain/abi, the same file deploy.js and verify-gate.js read.
+ * One source for it means the subgraph cannot end up indexing a different
+ * shape of registry than the deployer talked to. */
+function copyAbi (name) {
+  const p = path.join(ROOT, 'chain', 'abi', name + '.json');
+  if (!fs.existsSync(p)) throw new Error('missing chain/abi/' + name + '.json');
+  const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+  const abi = j.abi || j;
+  fs.mkdirSync(path.join(OUT, 'abis'), { recursive: true });
+  fs.writeFileSync(path.join(OUT, 'abis', name + '.json'), JSON.stringify(abi, null, 2));
+}
+
+/* The role bitmap CityOracle demands, read from the deployment rather than
+ * written down twice. deployed.json is committed, so this is available on a
+ * fresh clone even though the compile output is not. */
+function writeRole () {
+  const p = path.join(ROOT, 'chain', 'deployed.json');
+  const d = JSON.parse(fs.readFileSync(p, 'utf8'));
+  const r = d.offices && d.offices.mayor && d.offices.mayor.role;
+  if (!r) throw new Error('chain/deployed.json has no offices.mayor.role');
+  return String(r);
 }
 
 // ---------------------------------------------------------------- startBlock
@@ -167,9 +192,22 @@ const ORACLE_EVENTS = [
 const TOKEN_EVENTS = [
   ['FaucetDrawn(indexed address,uint256)', 'handleFaucetDrawn']
 ];
+/* The office, over time. LabelUnregistered is the recall; ExpiryUpdated is the
+   only way a term moves; EACRolesChanged plus TokenResource are what make
+   "the deputy never held the write role" a query rather than a claim. */
+const REGISTRY_EVENTS = [
+  ['LabelRegistered(indexed uint256,indexed bytes32,string,address,uint64,indexed address)', 'handleLabelRegistered'],
+  ['LabelUnregistered(indexed uint256,indexed address)', 'handleLabelUnregistered'],
+  ['ExpiryUpdated(indexed uint256,indexed uint64,indexed address)', 'handleExpiryUpdated'],
+  ['TokenResource(indexed uint256,indexed uint256)', 'handleTokenResource'],
+  ['EACRolesChanged(indexed uint256,indexed address,uint256,uint256)', 'handleEACRolesChanged']
+];
 
 async function main () {
   ['CityOracle', 'DistrictVault', 'CityUSD'].forEach(writeAbi);
+  copyAbi('UserRegistryImpl');
+
+  if (!cfg.registry) throw new Error('web3/config.json has no registry address');
 
   const vaults = cfg.vaults || [];
   if (vaults.length !== (cfg.districts || []).length) {
@@ -192,7 +230,8 @@ async function main () {
     '  file: ./schema.graphql',
     'dataSources:',
     source('CityOracle', cfg.oracle, at(cfg.oracle), 'CityOracle', ORACLE_EVENTS, './src/oracle.ts'),
-    source('CityUSD', cfg.token, at(cfg.token), 'CityUSD', TOKEN_EVENTS, './src/token.ts')
+    source('CityUSD', cfg.token, at(cfg.token), 'CityUSD', TOKEN_EVENTS, './src/token.ts'),
+    source('CityRegistry', cfg.registry, at(cfg.registry), 'UserRegistryImpl', REGISTRY_EVENTS, './src/registry.ts')
   ];
 
   vaults.forEach((v, i) => {
@@ -231,7 +270,10 @@ async function main () {
     'export function vaultForId(id: i32): string {\n' +
     '  let ds = districts();\n' +
     '  for (let i = 0; i < ds.length; i++) if (ds[i].id == id) return ds[i].vault;\n' +
-    '  return "";\n}\n');
+    '  return "";\n}\n\n' +
+    '/* The role bitmap CityOracle accepts, from chain/deployed.json. A mapping\n' +
+    '   runs in wasm with no filesystem, so it arrives as code like the rest. */\n' +
+    'export const WRITE_ROLE_STR: string = "' + writeRole() + '";\n');
 
   /* Nine vaults share one ABI, so codegen emits nine identical binding
      modules. The handlers are one file, so they need one import - this
@@ -246,7 +288,7 @@ async function main () {
     ''
   ].join('\n'));
 
-  console.log('wrote subgraph.yaml  (' + (vaults.length + 2) + ' data sources, network ' +
+  console.log('wrote subgraph.yaml  (' + (vaults.length + 3) + ' data sources, network ' +
     NETWORK + ', startBlock ' + start + ')');
   console.log('wrote src/districts.ts  (' + rows.length + ' districts)');
 }

@@ -129,3 +129,73 @@ type City @entity(immutable: false) {
   wallets: Int!
   updatedAt: BigInt!
 }
+
+# ---------------------------------------------------------------- the names
+#
+# The office is a name, and the name can run out. Everything above answers
+# "what is the city worth"; this half answers "who was allowed to say so, and
+# were they still allowed when they said it".
+#
+# It is indexed for the same reason DistrictSnapshot is. `registry.getState()`
+# answers the question for right now in one eth_call, and the market panel
+# already asks it that way. It cannot answer it for the past at all: a name's
+# expiry, the roles it carried and the block it was burned on are historical
+# STATE, and the public Sepolia endpoints this project is built against are
+# not archive nodes. Once the recall has burned mayor.cityhall.eth, the RPC
+# can only tell you that nobody holds it - not who did, for how long, or which
+# valuations they signed while they did. That record only exists here.
+
+"A name in the city's registry - an office like mayor, or a district."
+type Name @entity(immutable: false) {
+  "registry address + tokenId, because a tokenId is only unique per registry."
+  id: ID!
+  registry: Bytes!
+  tokenId: BigInt!
+  "From LabelRegistered, which carries the string - so no reverse lookup."
+  label: String!
+  owner: Bytes!
+  "Seconds. The term. When block.timestamp passes this, push() reverts."
+  expiry: BigInt!
+  "Current EAC role bitmap held by the owner."
+  roles: BigInt!
+  "roles & WRITE_ROLE - precomputed, because it is the only role CityOracle asks about."
+  canWrite: Boolean!
+  "Registered and not burned. Says nothing about expiry - compare that yourself."
+  active: Boolean!
+  "The recall. LabelUnregistered fired on this name."
+  burned: Boolean!
+  registeredAt: BigInt!
+  burnedAt: BigInt
+  updatedAt: BigInt!
+  events: [NameEvent!]! @derivedFrom(field: "name")
+}
+
+enum NameEventKind { REGISTERED RENEWED BURNED ROLES_CHANGED }
+
+"One thing that happened to a name. Immutable: the roll of names is a record."
+type NameEvent @entity(immutable: true) {
+  id: Bytes!
+  name: Name!
+  kind: NameEventKind!
+  "Set on REGISTERED and RENEWED."
+  expiry: BigInt
+  "Set on ROLES_CHANGED - the bitmap after the change."
+  roleBitmap: BigInt
+  "Whoever sent the transaction."
+  actor: Bytes!
+  block: BigInt!
+  timestamp: BigInt!
+  tx: Bytes!
+}
+
+"""
+EAC roles are keyed on a `resource`, not on a tokenId, and only TokenResource
+says which is which. Without this row EACRolesChanged cannot be attributed to
+a name at all - so this exists to make "the deputy provably never held the
+write role" a query rather than an assertion.
+"""
+type ResourceLink @entity(immutable: false) {
+  "registry address + resource."
+  id: ID!
+  name: Name!
+}

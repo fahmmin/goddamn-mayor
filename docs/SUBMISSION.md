@@ -196,6 +196,65 @@ Graph track stays credible as the next step rather than a rewrite.
 
 ---
 
+## The subgraph — used, but not entered
+
+The city is indexed by [a subgraph on Studio](https://api.studio.thegraph.com/query/1760255/mayor/v0.1.0):
+twelve data sources — the oracle, the CityUSD faucet, all nine vaults, and the
+city's own ENSv2 registry. It is load-bearing rather than decorative, and the
+reason is arithmetic:
+
+| Question | Over the RPC | Here |
+|---|---|---|
+| What is a district worth now? | 1 `eth_call` | 1 query |
+| What was it worth over 90 days? | 90 archive calls, against Sepolia endpoints that **do not keep the state** | 1 query |
+| What does one wallet hold across nine vaults? | 9 round trips | 1 query |
+| Who held the office when this NAV was signed? | **impossible** — see below | 1 query |
+
+That last row is why the registry is indexed alongside the vaults. `unregister()`
+leaves nothing behind: once the recall burns `mayor.cityhall.eth`, an RPC can
+report only that nobody holds it. Not who did. Not that they held the write
+role while they signed ninety days of valuations. Not which block took it away.
+The gate is a live question by design — that is the whole ENS argument — and
+the cost of that design is that the office has no history on chain to read.
+
+So `Name` and `NameEvent` keep one: every `LabelRegistered`, `ExpiryUpdated`,
+`LabelUnregistered` and `EACRolesChanged` on the city registry, with the label
+string the event itself carries. Two consequences worth the trouble:
+
+- **The recall becomes visible in the data**, not just as a reverted
+  transaction in a terminal. `burned: true` with the block it happened on.
+- **`deputy.cityhall.eth` is checkable rather than claimed.** The agent-as-
+  namespace bullet above says the Deputy can read and propose but provably
+  cannot push. That is now a query: `canWrite` is false, and no `ROLES_CHANGED`
+  row has ever set the write bit on it. No wallet and no signature needed to
+  verify it — which is the right bar for a claim about permissions.
+
+Before it existed the market panel's sparkline was a seven-day rolling sample
+taken in the browser — real numbers, but gone on reload. Now it is the series
+the oracle actually wrote. That is the difference between a chart of the game
+and a chart of the record, and the panel's badge reads `graph` rather than
+`live` precisely when it is showing the latter.
+
+**It is still not entered for The Graph's Composable or Standardized prize, and
+the honest reason is that it does not qualify.** Indexing two kinds of contract
+in one subgraph is not composing two Graph *products* — that prize means
+Subgraphs with Substreams, Firehose or Amp, and there is one product here. The
+other door is conformance to one of the eleven published standardized
+schemas. The relevant one here is **Yield Aggregator v1.3.1**, and conforming
+to it means USD-denominated TVL across a protocol-level entity tree. CityUSD is
+an unpriced testnet faucet token, so every USD field in that schema would be a
+number we made up. A subgraph that claims a standard it does not meet is worse
+than one that claims nothing.
+
+What is true is narrower and stated as such: the vaults are stock ERC-4626 with
+nothing overriding `totalAssets()`, so `Deposit` and `Withdraw` are the
+canonical events, and `Vault` / `Account` / `Position` / `VaultEvent` sit
+*beside* the city entities rather than on top of them. A tool that understands
+ERC-4626 can read them without knowing this game exists. That is the
+groundwork for conformance, not conformance.
+
+---
+
 ## What is new, and what existed before
 
 Honest separation, per the continuity rules:
@@ -218,7 +277,7 @@ and stops.
 
 - `smoke.js` only evaluates files listed in its `ORDER` array, so it never
   loads the bundle — `npm test` and `npm run smoke` stay green with the chain
-  unreachable. **227 checks, verified green after every commit in this event.**
+  unreachable. **338 checks (113 unit + 225 integration), verified green after every commit in this event.**
 - `game.js` has **zero edits**. It already called `ui.update(state)` every
   frame and re-read state fresh.
 - Delete the one `<script>` tag in `index.html` and the page is exactly the
@@ -237,7 +296,7 @@ could do to the submission.
 
 ```bash
 npm install && npm run serve        # → http://localhost:8080
-npm test && node smoke.js          # 20 unit + 207 integration checks
+npm test && node smoke.js          # 113 unit + 225 integration checks
 node chain/verify-gate.js          # 8 assertions against the live chain
 ```
 
@@ -250,9 +309,13 @@ process gets killed the night before a deadline.
 
 ## Roadmap
 
-- **The Graph.** The vaults are already stock ERC-4626, so a standardized
-  subgraph over all nine plus the ENS registry events is the natural next step,
-  composed with a Substreams module on the same chain.
+- **The Graph.** Two things stand between the current subgraph and the
+  standardized prize, and neither is cosmetic. Indexing the ENSv2 registry
+  alongside the vaults would put `expiry` and the recall burn on the same
+  timeline as the valuations — so "who held the office when this number was
+  written, and had the term run out?" becomes one query instead of an
+  unanswerable one. Conformance to Yield Aggregator v1.3.1 then needs a price
+  for CityUSD, because that schema is denominated in USD throughout.
 - **Private lobbies.** A lobby deploys its own subtree; the host picks a mayor;
   friends join as tenants holding expiring, non-transferable subnames
   (`apt-4b.riverside.cityhall.eth`). The chain is already the server.

@@ -2,14 +2,15 @@
   "name": "goddamn-mayor-subgraph",
   "version": "0.1.0",
   "private": true,
-  "description": "Nine ERC-4626 district vaults and the city oracle that prices them.",
+  "description": "Nine ERC-4626 district vaults, the city oracle that prices them, and the ENSv2 registry that says who may.",
   "scripts": {
     "manifest": "node build-manifest.js",
     "codegen": "npm run manifest && graph codegen",
     "build": "npm run codegen && graph build",
     "deploy": "graph deploy --node https://api.studio.thegraph.com/deploy/ mayor",
     "create-local": "graph create --node http://localhost:8020/ mayor",
-    "deploy-local": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 mayor"
+    "deploy-local": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 mayor",
+    "verify": "node verify-index.js"
   },
   "dependencies": {
     "@graphprotocol/graph-cli": "0.97.1",
