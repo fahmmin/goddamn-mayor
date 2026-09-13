@@ -273,7 +273,11 @@ async function main () {
     '  return "";\n}\n\n' +
     '/* The role bitmap CityOracle accepts, from chain/deployed.json. A mapping\n' +
     '   runs in wasm with no filesystem, so it arrives as code like the rest. */\n' +
-    'export const WRITE_ROLE_STR: string = "' + writeRole() + '";\n');
+    'export const WRITE_ROLE_STR: string = "' + writeRole() + '";\n\n' +
+    '/* The label CityOracle is configured to ask about. The write role shares a\n' +
+    '   bit with SET_RESOLVER, which every district legitimately holds, so the\n' +
+    '   bitmap alone does not answer "may this name write" - the label does. */\n' +
+    'export const OFFICE_LABEL: string = "' + (cfg.officeLabel || 'mayor') + '";\n');
 
   /* Nine vaults share one ABI, so codegen emits nine identical binding
      modules. The handlers are one file, so they need one import - this

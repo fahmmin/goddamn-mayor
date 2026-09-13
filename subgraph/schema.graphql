@@ -158,7 +158,19 @@ type Name @entity(immutable: false) {
   expiry: BigInt!
   "Current EAC role bitmap held by the owner."
   roles: BigInt!
-  "roles & WRITE_ROLE - precomputed, because it is the only role CityOracle asks about."
+  "Whether this name is the office CityOracle is configured to ask about."
+  isOffice: Boolean!
+  """
+  Whether CityOracle would accept a push from this name's owner on the strength
+  of its roles - that is, isOffice AND the write bit. Expiry is deliberately not
+  folded in: it is a function of the current block, not of anything indexed, so
+  compare `expiry` yourself.
+
+  The office check is not redundant. The write role shares its bit with
+  SET_RESOLVER, which all nine districts hold legitimately in order to set their
+  own resolvers, so a bitmap test alone reports nine names as able to write to
+  an oracle that has never heard of them.
+  """
   canWrite: Boolean!
   "Registered and not burned. Says nothing about expiry - compare that yourself."
   active: Boolean!

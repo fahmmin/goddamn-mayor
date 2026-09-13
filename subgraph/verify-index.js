@@ -71,7 +71,7 @@ async function main () {
 
   const d = await gql(`{
     names(first: 25, orderBy: registeredAt) {
-      label owner expiry roles canWrite active burned
+      label owner expiry roles isOffice canWrite active burned
       events(first: 50) { kind roleBitmap }
     }
     city(id: "0x63697479") { pushes lastDay }
@@ -110,6 +110,20 @@ async function main () {
     ok('  and has never once held the write role', !everHadWrite,
       (deputy.events || []).length + ' role events checked');
   }
+
+  /* The write role shares a bit with SET_RESOLVER, which every district holds
+     so it can set its own resolver. A bitmap test alone therefore reports nine
+     districts as able to write to an oracle that only ever asks about the
+     office - so assert the false positives are actually gone, rather than
+     trusting that the office check was wired up. */
+  const districts = names.filter(n => !n.isOffice);
+  const wrongly = districts.filter(n => n.canWrite);
+  ok('only the office may write', wrongly.length === 0,
+    districts.length + ' non-office names, ' + wrongly.length + ' claiming write' +
+    (wrongly.length ? ': ' + wrongly.map(n => n.label).join(', ') : ''));
+  const bitHolders = districts.filter(n => (BigInt(n.roles) & WRITE_ROLE) === WRITE_ROLE);
+  ok('  even though some hold the same role bit', bitHolders.length > 0,
+    bitHolders.length + ' hold SET_RESOLVER, which is that bit');
 
   ok('the oracle half is indexed too', !!d.city && d.city.pushes > 0,
     d.city ? d.city.pushes + ' pushes, day ' + d.city.lastDay : 'no city row');

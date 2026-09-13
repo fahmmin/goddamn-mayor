@@ -26,7 +26,7 @@ import {
   TokenResource
 } from '../generated/CityRegistry/UserRegistryImpl';
 import { Name, NameEvent, ResourceLink } from '../generated/schema';
-import { WRITE_ROLE_STR } from './districts';
+import { WRITE_ROLE_STR, OFFICE_LABEL } from './districts';
 
 let ZERO = BigInt.fromI32(0);
 
@@ -35,6 +35,14 @@ let ZERO = BigInt.fromI32(0);
    confident lie rather than an obvious failure. */
 function writeRole(): BigInt {
   return BigInt.fromString(WRITE_ROLE_STR);
+}
+
+/* Whether the owner's bitmap carries the bit CityOracle tests for. On its own
+   this is NOT the answer to "may this name write": the write role shares a bit
+   with SET_RESOLVER, which every district holds so it can set its own
+   resolver. Only the office is ever asked, so the label decides. */
+function hasWriteBit(bitmap: BigInt): boolean {
+  return !bitmap.bitAnd(writeRole()).equals(ZERO);
 }
 
 /* A tokenId is only unique within the registry that issued it. */
@@ -83,6 +91,10 @@ export function handleLabelRegistered(e: LabelRegistered): void {
     n.registeredAt = e.block.timestamp;
   }
   n.label = e.params.label;
+  n.isOffice = e.params.label == OFFICE_LABEL;
+  /* The label arrives here, and roles may have arrived before it, so the
+     verdict is recomputed rather than assumed to have been settled. */
+  n.canWrite = n.isOffice && hasWriteBit(n.roles);
   n.owner = e.params.owner;
   n.expiry = e.params.expiry;
   n.active = true;
@@ -171,7 +183,7 @@ export function handleEACRolesChanged(e: EACRolesChanged): void {
   if (!e.params.account.equals(n.owner)) return;
 
   n.roles = e.params.newRoleBitmap;
-  n.canWrite = !e.params.newRoleBitmap.bitAnd(writeRole()).equals(ZERO);
+  n.canWrite = n.isOffice && hasWriteBit(e.params.newRoleBitmap);
   n.updatedAt = e.block.timestamp;
   n.save();
 }
