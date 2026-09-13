@@ -17,10 +17,14 @@
     "chain:deploy": "node chain/deploy.js",
     "chain:verify": "node chain/verify-gate.js",
     "chain:push": "node chain/push-city.js",
-    "vercel-build": "node web3/make-config.js && npm --prefix web3 ci --no-audit --no-fund && npm --prefix web3 run build"
+    "vercel-build": "node web3/make-config.js && npm --prefix web3 ci --no-audit --no-fund && npm --prefix web3 run build && node tools/build-static.mjs",
+    "build:static": "node tools/build-static.mjs"
   },
   "productName": "I'm the Goddamn Mayor",
   "dependencies": {
     "pg": "^8.13.0"
+  },
+  "engines": {
+    "node": "22.x"
   }
 }

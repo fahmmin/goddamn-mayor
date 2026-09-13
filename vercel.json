@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run vercel-build",
-  "outputDirectory": ".",
+  "outputDirectory": "dist",
   "framework": null,
   "functions": {
     "api/*.mjs": {
@@ -12,25 +12,37 @@
     {
       "source": "/web3/config.json",
       "headers": [
-        { "key": "cache-control", "value": "public, max-age=0, must-revalidate" }
+        {
+          "key": "cache-control",
+          "value": "public, max-age=0, must-revalidate"
+        }
       ]
     },
     {
       "source": "/web3/bundle.js",
       "headers": [
-        { "key": "cache-control", "value": "public, max-age=0, must-revalidate" }
+        {
+          "key": "cache-control",
+          "value": "public, max-age=0, must-revalidate"
+        }
       ]
     },
     {
       "source": "/src/(.*)",
       "headers": [
-        { "key": "cache-control", "value": "public, max-age=0, must-revalidate" }
+        {
+          "key": "cache-control",
+          "value": "public, max-age=0, must-revalidate"
+        }
       ]
     },
     {
       "source": "/src/fonts/(.*)",
       "headers": [
-        { "key": "cache-control", "value": "public, max-age=31536000, immutable" }
+        {
+          "key": "cache-control",
+          "value": "public, max-age=31536000, immutable"
+        }
       ]
     }
   ]

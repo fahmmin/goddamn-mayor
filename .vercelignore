@@ -36,3 +36,5 @@ smoke.js
 .agents/
 .playwright-mcp/
 docs/PLAN.md
+node_modules
+dist
