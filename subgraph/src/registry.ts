@@ -136,11 +136,13 @@ export function handleExpiryUpdated(e: ExpiryUpdated): void {
    normally arrives before any role change - but ordering is not assumed
    anywhere below. */
 export function handleTokenResource(e: TokenResource): void {
-  let n = loadName(e.address, e.params.tokenId);
-  if (n == null) return;
-
+  /* Deliberately does NOT require the Name to exist yet. register() emits
+     this alongside LabelRegistered and the order between them is the
+     registry's business, not ours - resolving here would drop the link
+     whenever it happens to arrive first, and the role history with it. */
   let link = new ResourceLink(resourceId(e.address, e.params.resource));
-  link.name = n.id;
+  link.registry = e.address as Bytes;
+  link.tokenId = e.params.tokenId;
   link.save();
 }
 
@@ -159,7 +161,7 @@ export function handleEACRolesChanged(e: EACRolesChanged): void {
   let link = ResourceLink.load(resourceId(e.address, e.params.resource));
   if (link == null) return;
 
-  let n = Name.load(link.name);
+  let n = loadName(Address.fromBytes(link.registry), link.tokenId);
   if (n == null) return;
 
   let ev = record(n, 'ROLES_CHANGED', e);

@@ -160,6 +160,35 @@ node chain/verify-gate.js     # 8 assertions against the live deployment
 It proves the mayor can push, a stranger cannot, the data round-trips, and a
 burned name stops working.
 
+### The index
+
+Twelve data sources: the oracle, the CityUSD faucet, the nine vaults, and the
+city registry. The registry half exists because the gate is a *live* question
+by design — `push()` asks ENS what is true right now — and the price of that
+design is that the office has no history on chain. `unregister()` leaves no
+state, so after the recall an RPC can only tell you that nobody holds
+`mayor.cityhall.eth`. Not who did, and not that they held the write role while
+they signed ninety days of valuations. `Name` and `NameEvent` keep that record.
+
+```bash
+cd subgraph && npm install
+npm run build      # generate the manifest, codegen, compile to wasm
+npm run deploy     # needs your Subgraph Studio deploy key
+npm run verify     # assertions against the deployed index
+```
+
+`npm run verify` is the one worth running after a deploy. A subgraph that is
+still syncing, one pointed at a stale address, and one built from too late a
+startBlock all answer an empty array with HTTP 200 — so "no rows" cannot be
+told from "not finished" unless something asks a question it knows the answer
+to. It checks that the office is indexed with the write role, that the Deputy
+is indexed *without* it and has never once held it, and that all nine vaults
+and the oracle are there.
+
+The manifest, the ABIs and `src/districts.ts` are generated and gitignored.
+`blocks.json` caches the probed startBlock and is committed — delete it to
+re-probe after a redeploy.
+
 ---
 
 ## Saved cities

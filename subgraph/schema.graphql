@@ -197,5 +197,9 @@ write role" a query rather than an assertion.
 type ResourceLink @entity(immutable: false) {
   "registry address + resource."
   id: ID!
-  name: Name!
+  registry: Bytes!
+  "Resolved to a Name on read, not on write - TokenResource may be emitted
+   before the LabelRegistered that names the token, and a link that required
+   the Name to exist would be silently dropped in that ordering."
+  tokenId: BigInt!
 }
